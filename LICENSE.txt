@@ -1,0 +1,27 @@
+Pally Wrath
+Copyright (c) 2026 ApocSteel. All rights reserved.
+
+This add-on, including its source code, textures and artwork, is the property
+of its author. You may download and use it for personal use in World of
+Warcraft. You may not copy, modify, redistribute, re-upload or sell it, in
+whole or in part, without the author's written permission.
+
+World of Warcraft is a trademark of Blizzard Entertainment, Inc. This add-on
+is not affiliated with or endorsed by Blizzard Entertainment. In-game models
+and icons shown by the add-on are loaded from the game client at runtime and
+are not distributed with it.
+
+---
+
+Pally Wrath
+Copyright (c) 2026 ApocSteel. Todos los derechos reservados.
+
+Este addon, incluido su código, texturas e imágenes, es propiedad de su autor.
+Puedes descargarlo y usarlo para uso personal en World of Warcraft. No puedes
+copiarlo, modificarlo, redistribuirlo, volver a subirlo ni venderlo, total o
+parcialmente, sin permiso escrito del autor.
+
+World of Warcraft es una marca de Blizzard Entertainment, Inc. Este addon no
+está afiliado ni respaldado por Blizzard Entertainment. Los modelos e iconos
+del juego que muestra el addon se cargan desde el propio cliente y no se
+distribuyen con él.

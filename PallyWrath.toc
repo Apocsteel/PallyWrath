@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: |cffF58CBAPally Wrath|r
+## Notes: Retribution Paladin: shows your Unsealed Wrath echo stacks (Echo of Command, Righteousness...) as a crescent, a sword or a 3D model that fills up and bursts into flames at 3 stacks. /pw
+## Notes-esES: Paladín Reprensión: muestra las cargas de los ecos de Unsealed Wrath como una media luna, una espada o un modelo 3D que se rellena y arde con 3 cargas. /pw
+## Notes-esMX: Paladín Reprensión: muestra las cargas de los ecos de Unsealed Wrath como una media luna, una espada o un modelo 3D que se rellena y arde con 3 cargas. /pw
+## Author: ApocSteel
+## Version: 1.0.2
+## IconTexture: Interface\AddOns\PallyWrath\Media\icon
+## Category: Combat
+## X-License: All Rights Reserved
+## X-Curse-Project-ID: 1807214
+## SavedVariables: PallyWrathDB
+
+PallyWrath.lua
