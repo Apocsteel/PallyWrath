@@ -1,5 +1,13 @@
 # Pally Wrath — Changelog
 
+## 1.0.3
+
+**English**
+- Fixed: after the latest game update, when a new echo started in combat the first stack could be missed, so it showed 2 stacks when you had 3.
+
+**Español**
+- Corregido: tras la última actualización del juego, al empezar un eco nuevo en combate se podía perder la primera carga y marcaba 2 teniendo 3.
+
 ## 1.0.2
 
 **English**
