@@ -1290,7 +1290,17 @@ local function OnUWUpdate(item, tag)
         Log(string.format("gancho %s t=%.2f activo=%s cuenta=%d sello=%s numVisible=%s ancho=%s",
             tag, now % 1000, tostring(act), uw.count or -1, tostring(uw.seal), tostring(shown), tostring(w)))
     end
-    if tag ~= db.countHook then return end
+    if tag == db.countHook and act ~= true then
+        -- el eco acaba de aparecer: Blizzard actualiza las cargas antes de
+        -- marcar el icono como activo; lo contamos al activarse (mismo instante)
+        uw.pendT = now
+        return
+    end
+    if tag ~= db.countHook then
+        if not (act == true and uw.pendT and now - uw.pendT < 0.1) then return end
+        uw.pendT = nil
+        if db.debug then Log(string.format("  (carga al activarse el icono, %s)", tag)) end
+    end
     if act ~= true then return end
     if now - uw.lastT < 0.35 then return end   -- varias llamadas del mismo golpe
     uw.lastT = now
@@ -1361,6 +1371,7 @@ local function CombatScan()
         if uw.count <= 0 then
             uw.count, uw.exp = 1, GetTime() + ECHO_DUR
             uw.kind = uw.seal or uw.kind
+            uw.reset = false     -- este eco ya es el nuevo: el siguiente golpe suma
         end
         if uw.count >= db.minStacks then
             ShowMoon(uw.kind or uw.seal or "command", nil, uw.count, uw.exp)
