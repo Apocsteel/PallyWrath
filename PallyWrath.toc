@@ -4,7 +4,7 @@
 ## Notes-esES: Paladín Reprensión: muestra las cargas de los ecos de Unsealed Wrath como una media luna, una espada o un modelo 3D que se rellena y arde con 3 cargas. /pw
 ## Notes-esMX: Paladín Reprensión: muestra las cargas de los ecos de Unsealed Wrath como una media luna, una espada o un modelo 3D que se rellena y arde con 3 cargas. /pw
 ## Author: ApocSteel
-## Version: 1.0.2
+## Version: 1.0.3
 ## IconTexture: Interface\AddOns\PallyWrath\Media\icon
 ## Category: Combat
 ## X-License: All Rights Reserved
