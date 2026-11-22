@@ -5,6 +5,36 @@
 local ADDON = ...
 local PREFIX = "|cffF58CBAPally Wrath|r: "
 
+-- IDs de objetos, iconos y apariencias comprobados en los datos de Forever.
+-- Para las dos hachas sin modelo compatible, se usan ilustraciones propias.
+local CORRUPTED_ITEM = 22691
+local ASHBRINGER_ITEM = 13262
+local WEAPONS = {
+    { id = ASHBRINGER_ITEM, category = "sword", en = "Ashbringer", es = "Crematoria", icon = 135358, appearance = 66955, zoom = 1,
+      effect = { seal = true, aura = "model_ashbringer", light = { 1, 0.84, 0.54 }, glow = 0.40 } },
+    { id = CORRUPTED_ITEM, category = "sword", en = "Corrupted Ashbringer", es = "Crematoria corrupta", icon = 135331, appearance = 69249,
+      effect = { seal = true, aura = "model_corrupted", light = { 0.79, 1, 0.65 }, glow = 0.42 } },
+    { id = 19019, category = "sword", en = "Thunderfury", es = "Trueno Furioso", icon = 135349,
+      enFull = "Thunderfury, Blessed Blade of the Windseeker", esFull = "Trueno Furioso, Espada Bendita del Hijo del Viento",
+      appearance = 68530, zoom = 1.10, subclass = 7,
+      effect = { aura = "model_thunderfury", light = { 0.59, 0.81, 1 }, glow = 0.56 } },
+    { id = 13505, category = "sword", en = "Runeblade", es = "Hoja rúnica", icon = 135273,
+      enFull = "Runeblade of Baron Rivendare", esFull = "Hoja rúnica del Barón Rivendare",
+      appearance = 63795, subclass = 8,
+      effect = { itemVisual = 32, aura = "model_rivendare", light = { 0.74, 0.79, 1 }, glow = 0.56 } },
+    { id = "eldruin", category = "sword", en = "El’druin", es = "El’druin", art = "eldruin" },
+    { id = "azurewrath", category = "sword", en = "Azurewrath", es = "Ira celeste", art = "azurewrath" },
+    { id = 49623, category = "axe", en = "Shadowmourne", es = "Agonía de Sombras", art = "shadowmourne" },
+    { id = 206448, category = "axe", en = "Fyr’alath", es = "Fyr’alath", art = "fyralath" },
+    { id = 17182, category = "mace", en = "Sulfuras", es = "Sulfuras", icon = 133066, appearance = 68303, zoom = 1.10, subclass = 5,
+      effect = { aura = "sulfuras", light = { 1, 0.70, 0.47 }, glow = 0.72 },
+      enFull = "Sulfuras, Hand of Ragnaros", esFull = "Sulfuras, Mano de Ragnaros" },
+}
+local CLASSIC_SWORD = { category = "sword", en = "Classic sword", es = "Espada clásica",
+                        art = "sword_art", classic = true }
+local WEAPON_BY_ITEM = {}
+for _, weapon in ipairs(WEAPONS) do WEAPON_BY_ITEM[weapon.id] = weapon end
+
 ------------------------------------------------------------
 -- Configuración por defecto
 ------------------------------------------------------------
@@ -16,7 +46,8 @@ local DEFAULTS = {
     style = "espada",  -- "luna", "espada" o "modelo"
     sealIcons = {},  -- iconos de sello aprendidos de tus buffs
     countHook = "RefreshApplications",
-    modelItem = 22691,   -- objeto cuyo modelo 3D se muestra (22691 = Corrupted Ashbringer)
+    modelItem = CORRUPTED_ITEM,
+    useEquipped = false,
     modelZoom = 1.0,
     alpha = 0.25,
     fillDir = "arriba",  -- arriba | abajo (vertical) · derecha | izquierda (horizontal)
@@ -26,7 +57,7 @@ local DEFAULTS = {
     modelRoll = 270,     -- rotación (grados)
     modelX = 0, modelY = 0.1,  -- desplazamiento del modelo dentro de su marco
     showIcon = true,     -- mostrar el icono del sello
-    hideViewer = true,   -- dejar invisible (pero activo) el visor de beneficios de Blizzard
+    hideViewer = false,   -- dejar invisible (pero activo) el visor de beneficios de Blizzard
     coverOn = true, coverX = -22, coverY = 48, coverSize = 34,
     holeShape = "cuadrado",  -- forma del hueco: "cuadrado" o "circulo"
     mirror = false,          -- copia simétrica al otro lado del personaje
@@ -107,6 +138,8 @@ local function KindFromAlias(word)
 end
 
 local db
+local equippedItem
+local MAIN_HAND = INVSLOT_MAINHAND or 16
 
 ------------------------------------------------------------
 -- Idioma: castellano si el juego está en esES/esMX; si no, inglés
@@ -117,7 +150,6 @@ local IS_ES = (LOCALE == "esES" or LOCALE == "esMX")
 local EN = {
     { "En combate las cargas se cuentan con el icono de Unsealed Wrath del visor de buffs de Blizzard: no lo quites de allí. /pw ayuda: lista de comandos.",
       "In combat, stacks are counted from the Unsealed Wrath icon in Blizzard's buff tracker: keep it there. /pw help: command list." },
-    { "Cada ventana guarda el encuadre de la dirección de carga elegida.", "Each window keeps the framing of the selected fill direction." },
     { "El tamaño del hueco y el zoom son los de la espada principal.", "Hole size and zoom are shared with the main sword." },
     { "Indicador de cargas de Unsealed Wrath. También con /pw.", "Unsealed Wrath stack indicator. Also with /pw." },
     { "Desbloqueado. Arrastra el indicador y escribe /pw fijar.", "Unlocked. Drag the indicator and type /pw lock." },
@@ -160,16 +192,14 @@ local EN = {
     { "Sonido al llegar a 3 cargas", "Sound at 3 stacks" },
     { "Mostrar el icono del sello", "Show the seal icon" },
     { "Ocultar el visor de beneficios de Blizzard (sigue activo)", "Hide Blizzard's buff tracker (stays active)" },
-    { "Cooldown Manager activado: Pally Wrath lo necesita para contar cargas en combate.", "Cooldown Manager enabled: Pally Wrath needs it to count stacks in combat." },
-    { "Si no ves el indicador en combate, haz /reload.", "If the indicator doesn't show in combat, type /reload." },
     { "En combate no encuentro el icono de Unsealed Wrath. Abre el Cooldown Manager > Beneficios rastreados y añade Unsealed Wrath.", "Can't find the Unsealed Wrath icon in combat. Open Cooldown Manager > Tracked Buffs and add Unsealed Wrath." },
     { "Visor de Blizzard: ", "Blizzard tracker: " },
     { "Aparece desde (cargas)", "Shows from (stacks)" },
     { "Colores de cada sello", "Color of each seal" },
     { "Modelo 3D (encuadre)", "3D model (framing)" },
-    { "Hueco calavera: tamaño", "Skull hole: size" },
-    { "Hueco calavera: horizontal", "Skull hole: horizontal" },
-    { "Hueco calavera: vertical", "Skull hole: vertical" },
+    { "Recorte del sello: tamaño", "Seal cutout: size" },
+    { "Recorte del sello: horizontal", "Seal cutout: horizontal" },
+    { "Recorte del sello: vertical", "Seal cutout: vertical" },
     { "Dirección de carga", "Fill direction" },
     { "Hacia la izquierda", "Leftwards" },
     { "Hacia la derecha", "Rightwards" },
@@ -179,8 +209,6 @@ local EN = {
     { "Hacia abajo", "Downwards" },
     { "hacia arriba", "upwards" },
     { "hacia abajo", "downwards" },
-    { "Espada principal...", "Main sword..." },
-    { "Copia simétrica...", "Mirrored copy..." },
     { "Copia simétrica: ", "Mirrored copy: " },
     { "Copia simétrica", "Mirrored copy" },
     { "Espada principal", "Main sword" },
@@ -193,6 +221,7 @@ local EN = {
     { "Giro del modelo: ", "Model rotation: " },
     { "Zoom del modelo: ", "Model zoom: " },
     { "Modelo 3D: objeto ", "3D model: item " },
+    { "Ilustración de arma: objeto ", "Weapon illustration: item " },
     { " restablecido.", " reset." },
     { " asignado a ", " assigned to " },
     { " carga(s).", " stack(s)." },
@@ -260,9 +289,47 @@ end
 local Log, D   -- se definen más abajo
 local PlacePiecesRef
 local MirrorValRef = function(k) return 0 end   -- se sustituye por MirrorVal más abajo
-local ToggleModelWindow, RefreshModelWindows   -- ventanas de ajuste del modelo (más abajo)
-local modelWins = {}
 local function IsHoriz() return db and (db.fillDir == "derecha" or db.fillDir == "izquierda") end
+
+local function ModelItem()
+    if db.useEquipped then return equippedItem end
+    return db.modelItem or CORRUPTED_ITEM
+end
+
+local function ActiveWeapon()
+    return WEAPON_BY_ITEM[ModelItem()]
+end
+
+local function ActiveWeaponArt()
+    if db.useEquipped then return nil end
+    local weapon = ActiveWeapon()
+    return weapon and weapon.art
+end
+
+local function ActiveWeaponEffect()
+    local weapon = ActiveWeapon()
+    return weapon and weapon.effect
+end
+
+local function SealCutoutEnabled()
+    local effect = ActiveWeaponEffect()
+    if not effect or not effect.seal then return false end
+    if ModelItem() == ASHBRINGER_ITEM then return db.ashbringerCoverOn ~= false end
+    return db.coverOn ~= false
+end
+
+local function SealCutoutSize(frame)
+    local savedSize = db.coverSize or 34
+    if ModelItem() ~= ASHBRINGER_ITEM then return savedSize end
+    local pixel = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor() or 1
+    local filterMargin = math.min(4, pixel / frame:GetEffectiveScale())
+    -- Margen radial para el sello y el redondeo de los límites de recorte en pantalla.
+    return savedSize + 2 * (3 + filterMargin)
+end
+
+local function ColorAura(texture, sealColor)
+    texture:SetVertexColor(sealColor[1], sealColor[2], sealColor[3])
+end
 
 ------------------------------------------------------------
 -- Utilidades
@@ -322,9 +389,9 @@ local MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 --   luna       : media luna con marco dorado en 3 secciones
 --   espada     : espada de paladín que se rellena de la empuñadura a la punta
 local STYLES = {
-    luna   = { flame = "flame_moon",   iconX = 46, timerX = 152, name = "Media luna" },
-    espada = { flame = "flame_sword2", iconX = 14, timerX = 112, name = "Espada" },
-    modelo = { flame = "flame_sword2", iconX = 4,  timerX = 160, name = "Modelo 3D" },
+    luna   = { iconX = 46, timerX = 152, name = "Media luna" },
+    espada = { iconX = 14, timerX = 112, name = "Espada" },
+    modelo = { iconX = 4,  timerX = 160, name = "Modelo 3D" },
 }
 -- filas (0-1) donde empieza y acaba la espada dentro de su textura
 local SWORD_TOP, SWORD_BOTTOM = 0.0059, 0.9961
@@ -368,23 +435,6 @@ local moonFrame = top:CreateTexture(nil, "ARTWORK")
 moonFrame:SetAllPoints()
 moonFrame:SetTexture(MEDIA .. "moon_frame")
 
----------------- Espada
-local swordBg = f:CreateTexture(nil, "BACKGROUND")          -- espada apagada (vacía)
-swordBg:SetAllPoints()
-swordBg:SetTexture(MEDIA .. "sword_art")
-swordBg:SetDesaturated(true)
-swordBg:SetVertexColor(0.38, 0.38, 0.40)
-local swordFill = lit:CreateTexture(nil, "ARTWORK")          -- parte cargada, a todo color
-swordFill:SetTexture(MEDIA .. "sword_art")
-swordFill:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT")
-swordFill:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
-local swordTint = lit:CreateTexture(nil, "OVERLAY")          -- velo del color del sello
-swordTint:SetTexture(MEDIA .. "sword_mask")
-swordTint:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT")
-swordTint:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
-swordTint:SetBlendMode("ADD")
-swordTint:SetAlpha(0.30)
-
 ---------------- Modelo 3D del juego (lo dibuja tu cliente): un solo modelo, la carga se ve en su luz
 local model = CreateFrame("PlayerModel", nil, f)          -- base, apagada
 model:Hide()
@@ -410,9 +460,15 @@ cover:SetScript("OnDragStop", function(self)
     local s1, s2 = self:GetEffectiveScale(), f:GetEffectiveScale()
     local ix, iy = self:GetCenter()
     local fx, fy = f:GetCenter()
-    if ix and fx then db.coverX, db.coverY = (ix * s1 - fx * s2) / s2, (iy * s1 - fy * s2) / s2 end
+    if ix and fx then
+        local x, y = (ix * s1 - fx * s2) / s2, (iy * s1 - fy * s2) / s2
+        if IsHoriz() then x, y = y, -x end
+        db.coverX, db.coverY = x, y
+    end
     self:ClearAllPoints()
-    self:SetPoint("CENTER", f, "CENTER", db.coverX, db.coverY)
+    local x, y = db.coverX, db.coverY
+    if IsHoriz() then x, y = -y, x end
+    self:SetPoint("CENTER", f, "CENTER", x, y)
     if PlacePiecesRef then PlacePiecesRef() end
 end)
 
@@ -421,7 +477,8 @@ local function PlaceCover()
     local x, y = db.coverX or -22, db.coverY or 48
     if IsHoriz() then x, y = -y, x end            -- en horizontal el modelo se tumba 90º
     cover:SetPoint("CENTER", f, "CENTER", x, y)
-    cover:SetSize(db.coverSize or 34, db.coverSize or 34)
+    local size = SealCutoutSize(f)
+    cover:SetSize(size, size)
 end
 
 
@@ -431,15 +488,49 @@ local function ModelHasFile(m)
     return ok and fid ~= nil and fid ~= 0
 end
 
-local function SetupModel(m, level, col, mirror)
+local ModelAuraProfile
+local function NativeFireVisual(color)
+    local r, g, b = color[1], color[2], color[3]
+    if math.max(r, g, b) - math.min(r, g, b) < 0.23 then return 126 end -- claro
+    if b > g and r > g then return 128 end  -- violeta
+    if b > r and b > g then return 27 end   -- azul
+    if g > r then return 127 end           -- verde
+    return g > 0.67 * r and 129 or 25       -- dorado o rojo
+end
+
+local function SetupModel(m, level, col, mirror, alpha)
     -- cargar el objeto solo si cambia o si el modelo se ha quedado vacío (recargar = parpadeo)
-    local id = db.modelItem or 22691
+    local id = ModelItem()
+    if not id then
+        if m._loadedId and m.ClearModel then m:ClearModel() end
+        m._loadedId, m._loadedVisual, m._camKey = nil, nil, nil
+        return false, "sin arma equipada"
+    end
+    local weapon = ActiveWeapon()
+    local effect = ActiveWeaponEffect()
+    local full = level and level >= 3 or false
+    col = col or { 1, 1, 1 }
+    local itemVisual = 0
+    if full then
+        if effect and effect.itemVisual then
+            itemVisual = effect.itemVisual
+        elseif not ModelAuraProfile(effect, mirror) then
+            itemVisual = NativeFireVisual(col)
+        end
+    end
     local ok, err = true, nil
-    if m._loadedId ~= id or not ModelHasFile(m) then
-        ok, err = pcall(m.SetItem, m, id)
-        if not ok and m.SetItemAppearance then ok, err = pcall(m.SetItemAppearance, m, id) end
-        if not ok and m.SetDisplayInfo and db.modelDisplay then ok, err = pcall(m.SetDisplayInfo, m, db.modelDisplay) end
-        if ok then m._loadedId = id end
+    if m._loadedId ~= id or m._loadedVisual ~= itemVisual or not ModelHasFile(m) then
+        if m._loadedId ~= id and m.ClearModel then m:ClearModel() end
+        ok, err = pcall(m.SetItem, m, id, 0, itemVisual)
+        if err == false then ok = false end
+        if not ok and m.SetItemAppearance and (not db.useEquipped or (weapon and weapon.appearance)) then
+            ok, err = pcall(m.SetItemAppearance, m, weapon and weapon.appearance or id, itemVisual, weapon and weapon.subclass)
+            if err == false then ok = false end
+        end
+        if not ok and not db.useEquipped and not weapon and m.SetDisplayInfo and db.modelDisplay then
+            ok, err = pcall(m.SetDisplayInfo, m, db.modelDisplay)
+        end
+        if ok then m._loadedId, m._loadedVisual = id, itemVisual end
         m._camKey = nil
     end
     -- cámara: solo cuando cambia algún ajuste del encuadre
@@ -457,22 +548,22 @@ local function SetupModel(m, level, col, mirror)
         if m.SetPitch then pcall(m.SetPitch, m, math.rad(pitch)) end
         if m.SetRoll then pcall(m.SetRoll, m, math.rad(roll + (IsHoriz() and -90 or 0))) end
     end
-    -- luz: apagada para la base, del color del sello para la parte cargada
-    -- aspecto según las cargas:
-    --   0-1: gris y tenue · 2: casi a oscuras para que destaquen sus brillos propios (la calavera)
-    --   3: completamente iluminado
+    -- Base legible sin emisores. Al completar las cargas entra la luz propia del arma.
     level = tonumber(level) or 0
-    col = col or { 1, 1, 1 }
     local r, g, b, amb, dif, desat
-    if level >= 3 then
-        r, g, b = 0.85 + 0.15 * col[1], 0.85 + 0.15 * col[2], 0.85 + 0.15 * col[3]
-        amb, dif, desat = 1.0, 1.0, 0
+    if effect and full then
+        r, g, b = effect.light[1], effect.light[2], effect.light[3]
+        amb, dif, desat = 1, 1, 0
+    elseif level < 2 then
+        r, g, b = 0.72, 0.72, 0.72
+        amb, dif, desat = 0.62, 0.48, 1
     elseif level == 2 then
-        r, g, b = 0.85 + 0.15 * col[1], 0.85 + 0.15 * col[2], 0.85 + 0.15 * col[3]
-        amb, dif, desat = 0.85, 0.85, 0
+        r, g, b = 0.52 + 0.43 * col[1], 0.52 + 0.43 * col[2], 0.52 + 0.43 * col[3]
+        amb, dif, desat = 0.92, 0.84, 0
     else
-        r, g, b = 0.55, 0.55, 0.60
-        amb, dif, desat = 0.25, 0.20, 1
+        local glow = math.min(3, level) / 3
+        r, g, b = 0.60 + 0.40 * col[1] * glow, 0.60 + 0.40 * col[2] * glow, 0.60 + 0.40 * col[3] * glow
+        amb, dif, desat = 0.30 + 0.70 * glow, 0.20 + 0.80 * glow, 1 - glow
     end
     local okL = pcall(m.SetLight, m, true, { omnidirectional = false, point = CreateVector3D and CreateVector3D(-1, 1, -1) or nil,
         ambientIntensity = amb, ambientColor = CreateColor and CreateColor(r, g, b) or nil,
@@ -481,11 +572,13 @@ local function SetupModel(m, level, col, mirror)
     if m.SetDesaturation then pcall(m.SetDesaturation, m, desat) end
     -- la niebla no hace efecto en Forever: se quita por si quedó puesta
     if m.ClearFog then pcall(m.ClearFog, m) end
-    -- efectos de partículas del modelo (el brillo de la calavera): solo con 3 cargas
-    if m.SetParticlesEnabled then pcall(m.SetParticlesEnabled, m, level >= 3) end
+    -- Los efectos nativos acompañan al arma al cambiar su cámara.
+    if m.SetParticlesEnabled then pcall(m.SetParticlesEnabled, m, full) end
+    if m.SetGlow then pcall(m.SetGlow, m, full and effect and effect.glow or 0) end
     -- los modelos 3D no heredan la opacidad del marco: se aplica aparte
-    if m.SetModelAlpha then pcall(m.SetModelAlpha, m, db.alpha or 0.25) end
-    pcall(m.SetAlpha, m, db.alpha or 0.25)
+    alpha = alpha or db.alpha or 0.25
+    if m.SetModelAlpha then pcall(m.SetModelAlpha, m, alpha) end
+    pcall(m.SetAlpha, m, alpha)
     return ok, err, okL
 end
 
@@ -509,36 +602,47 @@ for _, p in ipairs(pieces) do
     -- un modelo cargado mientras estaba oculto puede salir vacío: se recarga al mostrarse
     p.m:SetScript("OnShow", function(self) SetupModel(self, curLevel, curCol) end)
 end
+local function ModelHoleRects(W, H, x, y, diameter)
+    local hs = diameter / 2
+    -- hueco en coordenadas del modelo (origen arriba a la izquierda)
+    local cx, cy = W / 2 + x, H / 2 - y
+    local t = math.max(0, math.min(H, cy - hs))
+    local b = math.max(0, math.min(H, cy + hs))
+    -- hueco circular: arriba y abajo enteros; en medio, franjas cortadas a la anchura del círculo
+    local rects = { { 0, 0, W, t }, { 0, b, W, H - b } }
+    local rowH = (b - t) / HOLE_ROWS
+    local coverEntireBand = ModelItem() == ASHBRINGER_ITEM
+    for k = 0, HOLE_ROWS - 1 do
+        local y0 = t + k * rowH
+        local ym = y0 + rowH / 2
+        local dy = math.abs(ym - cy)
+        local half
+        if db.holeShape == "circulo" then
+            -- Cubre todo el arco dentro de la franja, no solo su punto medio.
+            if coverEntireBand then dy = math.max(0, dy - rowH / 2) end
+            half = (dy < hs) and math.sqrt(hs * hs - dy * dy) or 0
+        else
+            half = hs
+        end
+        local hl = math.max(0, math.min(W, cx - half))
+        local hr = math.max(0, math.min(W, cx + half))
+        rects[#rects + 1] = { 0, y0, hl, rowH }          -- a la izquierda del círculo
+        rects[#rects + 1] = { hr, y0, W - hr, rowH }     -- a la derecha del círculo
+    end
+    return rects
+end
+
 local piecesKey
 local function PlacePieces(force)
     local W, H = model:GetWidth(), model:GetHeight()
-    local key = table.concat({ W, H, db.coverX or -22, db.coverY or 48, db.coverSize or 34,
+    local size = SealCutoutSize(model)
+    local key = table.concat({ ModelItem(), W, H, db.coverX or -22, db.coverY or 48, size,
         db.holeShape or "cuadrado", IsHoriz() and 1 or 0 }, ":")
     if not force and key == piecesKey then return end
     piecesKey = key
     local x, y = db.coverX or -22, db.coverY or 48
     if IsHoriz() then x, y = -y, x end
-    local hs = (db.coverSize or 34) / 2
-    -- hueco en coordenadas del modelo (origen arriba a la izquierda)
-    local l, r = W / 2 + x - hs, W / 2 + x + hs
-    local t, b = H / 2 - y - hs, H / 2 - y + hs
-    l, r = math.max(0, l), math.min(W, r)
-    t, b = math.max(0, t), math.min(H, b)
-    -- hueco circular: arriba y abajo enteros; en medio, franjas cortadas a la anchura del círculo
-    local cxh, cyh = (l + r) / 2, (t + b) / 2
-    local rects = { { 0, 0, W, t }, { 0, b, W, H - b } }
-    local rowH = (b - t) / HOLE_ROWS
-    for k = 0, HOLE_ROWS - 1 do
-        local y0 = t + k * rowH
-        local ym = y0 + rowH / 2
-        local dy = math.abs(ym - cyh)
-        local half
-        if db.holeShape == "circulo" then half = (dy < hs) and math.sqrt(hs * hs - dy * dy) or 0
-        else half = hs end                                  -- cuadrado
-        local hl, hr = math.max(0, cxh - half), math.min(W, cxh + half)
-        rects[#rects + 1] = { 0, y0, hl, rowH }          -- a la izquierda del círculo
-        rects[#rects + 1] = { hr, y0, W - hr, rowH }     -- a la derecha del círculo
-    end
+    local rects = ModelHoleRects(W, H, x, y, size)
     for i, p in ipairs(pieces) do
         local rx, ry, rw, rh = unpack(rects[i])
         p.clip:ClearAllPoints()
@@ -557,10 +661,10 @@ end
 
 local function LoadModel(col, level)
     local ok, err, okL = SetupModel(model, level or 0, col)
-    SetupPieces(level or 0, col)
+    if SealCutoutEnabled() then SetupPieces(level or 0, col) end
     if not modelInfoLogged then
         modelInfoLogged = true
-        Log("modelo 3D objeto " .. tostring(db.modelItem) .. ": " .. (ok and "cargado" or ("ERROR " .. D(err))) ..
+        Log("modelo 3D objeto " .. tostring(ModelItem()) .. ": " .. (ok and "cargado" or ("ERROR " .. D(err))) ..
             " | luz=" .. tostring(okL) .. 
             " | recorte=" .. tostring(modelClip.SetClipsChildren ~= nil) ..
             " | SetPitch=" .. tostring(model.SetPitch ~= nil) .. " | SetRoll=" .. tostring(model.SetRoll ~= nil) ..
@@ -572,7 +676,6 @@ model:SetScript("OnShow", function() SetupModel(model, curLevel or 0, curCol) en
 
 
 local moonParts = { moonBg, moonFrame }
-local swordParts = { swordBg, swordFill, swordTint }
 
 -- Icono del sello que se está acumulando
 -- va en su propio marco para poder ocultarlo o moverlo aparte
@@ -618,20 +721,82 @@ end)
 
 -- Coloca una textura que ocupa todo el indicador, mostrando solo el tramo [a0,a1] de su eje
 -- largo (0-1, de arriba abajo en vertical; de izquierda a derecha en horizontal).
-local function PlaceCrop(tex, a0, a1)
+local function CropTexture(frame, tex, a0, a1, mirrored)
     a0, a1 = a0 or 0, a1 or 1
     tex:ClearAllPoints()
-    local W, H = f:GetWidth(), f:GetHeight()
+    local W, H = frame:GetWidth(), frame:GetHeight()
     if IsHoriz() then
-        tex:SetPoint("TOPLEFT", f, "TOPLEFT", W * a0, 0)
+        if mirrored then a0, a1 = 1 - a1, 1 - a0 end
+        tex:SetPoint("TOPLEFT", frame, "TOPLEFT", W * a0, 0)
         tex:SetSize(math.max(W * (a1 - a0), 0.01), H)
-        tex:SetTexCoord(0, 1 - a0, 1, 1 - a0, 0, 1 - a1, 1, 1 - a1)
+        if mirrored then
+            tex:SetTexCoord(0, a0, 1, a0, 0, a1, 1, a1)
+        else
+            tex:SetTexCoord(0, 1 - a0, 1, 1 - a0, 0, 1 - a1, 1, 1 - a1)
+        end
     else
-        tex:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -H * a0)
+        tex:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -H * a0)
         tex:SetSize(W, math.max(H * (a1 - a0), 0.01))
-        tex:SetTexCoord(0, 1, a0, a1)
+        if mirrored then tex:SetTexCoord(1, 0, a0, a1) else tex:SetTexCoord(0, 1, a0, a1) end
     end
 end
+
+local function PlaceCrop(tex, a0, a1)
+    CropTexture(f, tex, a0, a1, false)
+end
+
+-- Las ilustraciones comparten un lienzo de 256 × 512 con 18 px libres arriba y abajo.
+local ART_TOP, ART_BOTTOM = 18 / 512, 494 / 512
+local function DrawWeaponSections(frame, sections, asset, count, color, mirrored, classic)
+    local forward = db.fillDir == "abajo" or db.fillDir == "izquierda"
+    local horizontal = IsHoriz()
+    local topEdge = classic and SWORD_TOP or ART_TOP
+    local bottomEdge = classic and SWORD_BOTTOM or ART_BOTTOM
+    local span = (bottomEdge - topEdge) / 3
+    local seam = count < 3 and 1.5 / 256 or 0
+    for i, section in ipairs(sections) do
+        section:SetShown(i <= count)
+        if i <= count then
+            local band = forward and i or 4 - i
+            local first = band == 1 and 0 or topEdge + (band - 1) * span + seam
+            local last = band == 3 and 1 or topEdge + band * span - seam
+            section:SetTexture(asset)
+            section:SetVertexColor(0.76 + 0.24 * color[1], 0.76 + 0.24 * color[2], 0.76 + 0.24 * color[3])
+            if horizontal then
+                CropTexture(frame, section, 1 - last, 1 - first, mirrored)
+            else
+                CropTexture(frame, section, first, last, mirrored)
+            end
+        end
+    end
+end
+
+local function BuildWeaponArt(frame, parent, mirrored)
+    local body = parent:CreateTexture(nil, "ARTWORK")
+    body:SetDesaturated(true)
+    body:SetVertexColor(0.48, 0.48, 0.48)
+    local sections = {}
+    for i = 1, 3 do sections[i] = parent:CreateTexture(nil, "ARTWORK", nil, 1) end
+    local layers = {}
+    function layers:Hide()
+        body:Hide()
+        for _, section in ipairs(sections) do section:Hide() end
+    end
+
+    function layers:Draw(count, color)
+        local weapon = db.style == "espada" and CLASSIC_SWORD or ActiveWeapon()
+        local texture = MEDIA .. weapon.art
+        body:SetTexture(texture)
+        CropTexture(frame, body, 0, 1, mirrored)
+        body:Show()
+        DrawWeaponSections(frame, sections, texture, count, color, mirrored, weapon.classic)
+    end
+
+    layers:Hide()
+    return layers
+end
+
+local weaponArt = BuildWeaponArt(f, top, false)
 
 iconHolder:SetScript("OnDragStart", function(self) if f.unlocked then self:StartMoving() end end)
 iconHolder:SetScript("OnDragStop", function(self)
@@ -646,8 +811,8 @@ iconHolder:SetScript("OnDragStop", function(self)
     self:SetPoint("CENTER", f, "CENTER", db.iconOffset[1], db.iconOffset[2])
 end)
 
--- Encuadre del modelo 3D por orientación: uno para vertical y otro para horizontal
-local PROFILE_KEYS = { "modelFacing", "modelPitch", "modelRoll", "modelZoom", "modelY",
+-- Encuadre por arma y dirección. La copia conserva su propio giro e inclinación.
+local PROFILE_KEYS = { "modelFacing", "modelPitch", "modelRoll", "modelZoom", "modelX", "modelY",
                        "coverSize", "coverX", "coverY", "holeShape",
                        "mFacing", "mPitch", "mRoll", "mCoverX", "mCoverY" }   -- m* = copia simétrica
 -- un encuadre por dirección de carga (valores elegidos por Julen)
@@ -661,6 +826,14 @@ local PROFILE_DEFAULTS = {
     izquierda = { modelFacing = 270, modelPitch = 180, modelRoll = 255, modelZoom = 1.0, modelY = 0.2,
                   coverSize = 36, coverX = 30,  coverY = -54, holeShape = "cuadrado" },
 }
+-- El encuadre hacia arriba se afinó en el cliente. Los demás son puntos de partida.
+-- Se ajustan por dirección en Avanzado si se cambia la cámara.
+local ASHBRINGER_CUTOUT = {
+    arriba    = { coverX = -14, coverY =  53, coverSize = 26, holeShape = "circulo" },
+    abajo     = { coverX = -14, coverY = -50, coverSize = 32, holeShape = "circulo" },
+    derecha   = { coverX =  19, coverY = -56, coverSize = 32, holeShape = "circulo" },
+    izquierda = { coverX =  19, coverY = -58, coverSize = 32, holeShape = "circulo" },
+}
 -- valores de la copia: si no están ajustados, se deducen de los de la principal
 local function MirrorVal(k)
     if db[k] ~= nil then return db[k] end
@@ -673,35 +846,150 @@ end
 
 MirrorValRef = MirrorVal
 local function SyncProfile()
-    db.prof = db.prof or {}
+    local item = ModelItem()
+    if not item then return end
+    db.weaponProfiles = db.weaponProfiles or {}
+    if db._prof and not db._profItem then
+        -- Los ajustes anteriores compartían una sola tabla para cualquier arma.
+        db.weaponProfiles[item] = db.prof or {}
+        db._profItem = item
+    end
+    db.prof = nil
+    if not db.ashbringerMaskV then
+        -- Las versiones anteriores guardaban coordenadas de la calavera incluso para Crematoria.
+        for direction, profile in pairs(db.weaponProfiles[ASHBRINGER_ITEM] or {}) do
+            for key in pairs(ASHBRINGER_CUTOUT[direction] or {}) do profile[key] = nil end
+            profile.mCoverX, profile.mCoverY = nil, nil
+        end
+        local mask = db._profItem == ASHBRINGER_ITEM and ASHBRINGER_CUTOUT[db._prof]
+        if mask then
+            for key, value in pairs(mask) do db[key] = value end
+            db.mCoverX, db.mCoverY = nil, nil
+        end
+        db.ashbringerMaskV = 1
+    end
     local want = PROFILE_DEFAULTS[db.fillDir] and db.fillDir or "arriba"
-    if db._prof == want then return end
-    if db._prof then                                   -- guardar lo que había en la orientación anterior
-        db.prof[db._prof] = db.prof[db._prof] or {}
-        for _, k in ipairs(PROFILE_KEYS) do db.prof[db._prof][k] = db[k] end
+    if db._prof == want and db._profItem == item then return end
+    if db._prof and db._profItem then
+        local previous = db.weaponProfiles[db._profItem] or {}
+        local profile = {}
+        for _, key in ipairs(PROFILE_KEYS) do profile[key] = db[key] end
+        previous[db._prof] = profile
+        db.weaponProfiles[db._profItem] = previous
     end
-    local p = db.prof[want] or PROFILE_DEFAULTS[want]
-    for _, k in ipairs(PROFILE_KEYS) do
-        local v = p[k]; if v == nil then v = PROFILE_DEFAULTS[want][k] end
-        db[k] = v                                     -- (m* sin ajustar quedan en nil)
+    local profiles = db.weaponProfiles[item]
+    local profile = profiles and profiles[want]
+    local weapon = ActiveWeapon()
+    local mask = item == ASHBRINGER_ITEM and ASHBRINGER_CUTOUT[want] or nil
+    for _, key in ipairs(PROFILE_KEYS) do
+        local value = profile and profile[key]
+        if value == nil then
+            value = (mask and mask[key]) or (key == "modelZoom" and weapon and weapon.zoom) or PROFILE_DEFAULTS[want][key]
+            if value == nil and key == "modelX" then value = DEFAULTS.modelX end
+        end
+        db[key] = value
     end
-    db._prof = want
+    db._prof, db._profItem = want, item
+end
+
+local SULFURAS_HEAD = {
+    arriba = { -12, 51 }, abajo = { -12, -49 },
+    derecha = { 54, 25 }, izquierda = { 54, 25 },
+}
+
+ModelAuraProfile = function(effect, mirrored)
+    if not effect or not effect.aura then return end
+    local direction = PROFILE_DEFAULTS[db.fillDir] and db.fillDir or "arriba"
+    local camera = PROFILE_DEFAULTS[direction]
+    local facing = mirrored and MirrorVal("mFacing") or db.modelFacing
+    local pitch = mirrored and MirrorVal("mPitch") or db.modelPitch
+    local roll = mirrored and MirrorVal("mRoll") or db.modelRoll
+    local baseFacing = (camera.modelFacing + (mirrored and 180 or 0)) % 360
+    local basePitch = (mirrored and -camera.modelPitch or camera.modelPitch) % 360
+    -- El contorno es una proyección del arma. Al cambiar la cámara se usa fuego 3D en el modelo.
+    if facing ~= baseFacing or pitch ~= basePitch or (db.modelX or 0) ~= DEFAULTS.modelX
+        or db.modelY ~= camera.modelY then return end
+    local rollOffset = (roll or camera.modelRoll) - camera.modelRoll
+    if effect.aura ~= "sulfuras" and rollOffset ~= 0 then return end
+    local zoom = ActiveWeapon().zoom or camera.modelZoom
+    return direction, zoom / math.max(0.25, db.modelZoom or zoom), rollOffset
+end
+
+local function SetAuraFrame(texture, frameIndex, mirrored)
+    local left = (frameIndex + 0.5 / 128) / FLAME_FRAMES
+    local right = (frameIndex + 1 - 0.5 / 128) / FLAME_FRAMES
+    if texture.auraRotated then
+        local first, last = 1, 0
+        if mirrored then
+            if texture.modelContour then
+                left, right = right, left
+            else
+                first, last = last, first
+            end
+        end
+        texture:SetTexCoord(left, first, right, first, left, last, right, last)
+    else
+        if mirrored then left, right = right, left end
+        if texture.auraInverted then
+            texture:SetTexCoord(left, right, 1, 0)
+        else
+            texture:SetTexCoord(left, right, 0, 1)
+        end
+    end
+end
+
+local function ConfigureAura(texture, frame, mirrored)
+    local horizontal = IsHoriz()
+    local artwork = db.style == "espada" and CLASSIC_SWORD.art or (db.style == "modelo" and ActiveWeaponArt())
+    local effect = db.style == "modelo" and ActiveWeaponEffect()
+    local direction, scale, rollOffset = ModelAuraProfile(effect, mirrored)
+    local x, y, width, height = 0, 0, 256, 512
+    local asset
+    local modelContour = direction ~= nil and effect.aura ~= "sulfuras"
+    if artwork then
+        asset, width, height = "aura_" .. artwork, 176, 352
+    elseif direction then
+        if modelContour then
+            asset, width, height = "aura_" .. effect.aura, 176 * scale, 352 * scale
+        else
+            local head = SULFURAS_HEAD[direction]
+            x, y = head[1], head[2]
+            if mirrored then
+                if horizontal then y = -y else x = -x end
+            end
+            local angle = math.rad(rollOffset)
+            local sine, cosine = math.sin(angle), math.cos(angle)
+            x, y = (x * cosine - y * sine) * scale, (x * sine + y * cosine) * scale
+            asset, width, height = "aura_sulfuras", 128 * scale, 128 * scale
+        end
+    elseif db.style == "luna" then
+        asset = "flame_moon" .. (horizontal and "_h" or "")
+    end
+    texture.auraEnabled = asset ~= nil
+    texture.modelContour = modelContour
+    texture.auraRotated = (artwork or modelContour) and horizontal
+    texture.auraInverted = modelContour and direction == "abajo"
+    texture:SetTexture(asset and MEDIA .. asset or nil)
+    texture:ClearAllPoints()
+    texture:SetPoint("CENTER", frame, "CENTER", x, y)
+    if horizontal then texture:SetSize(height, width) else texture:SetSize(width, height) end
+    SetAuraFrame(texture, 0, mirrored)
 end
 
 local function ApplyStyle()
     if db.style == "ashbringer" then db.style = "espada" end
+    if db.style == "espada" then db.useEquipped = false end
     SyncProfile()
     if not STYLES[db.style] then db.style = "luna" end
+    if db.style ~= "luna" and not db.useEquipped then db.weaponStyle = db.style end
     local st = STYLES[db.style]
-    local isSword = db.style == "espada"
-    local isModel = db.style == "modelo"
+    local isModel = db.style == "modelo" and ModelItem() ~= nil and not ActiveWeaponArt()
+    weaponArt:Hide()
     for _, p in ipairs(moonParts) do p:SetShown(db.style == "luna") end
-    swordBg:SetShown(isSword)
-    if not isSword then swordFill:Hide(); swordTint:Hide() end
     if db.style ~= "luna" then for i = 1, 3 do fill[i]:Hide() end end
     local horiz = IsHoriz()
     f:SetSize(horiz and 256 or 128, horiz and 128 or 256)
-    for _, t in ipairs({ moonBg, moonFrame, fill[1], fill[2], fill[3], swordBg }) do PlaceCrop(t, 0, 1) end
+    for _, t in ipairs({ moonBg, moonFrame, fill[1], fill[2], fill[3] }) do PlaceCrop(t, 0, 1) end
     model:ClearAllPoints()
     model:SetSize(horiz and 270 or 150, horiz and 150 or 270)
     model:SetPoint("CENTER", f, "CENTER", 0, 0)
@@ -709,12 +997,9 @@ local function ApplyStyle()
     modelClip:SetShown(false)
     PlaceCover()
     cover:Hide()
-    PlacePieces(true)
-    if not isModel then ShowPieces(false) end
+    if isModel and SealCutoutEnabled() then PlacePieces(true) else ShowPieces(false) end
     if isModel then LoadModel() end
-    flame:SetTexture(MEDIA .. st.flame .. (horiz and "_h" or ""))
-    flame:SetSize(horiz and 512 or 256, horiz and 256 or 512)
-    flame:SetTexCoord(0, 1 / FLAME_FRAMES, 0, 1)
+    ConfigureAura(flame, f, false)
     iconHolder:ClearAllPoints()
     timer:ClearAllPoints()
     local off = db.iconOffset            -- posición propia del icono (si lo has movido)
@@ -745,6 +1030,10 @@ local function ApplyPosition()
     local p = db.point
     f:SetPoint(p[1], UIParent, p[3], p[4], p[5])
     f:SetScale(db.scale)
+    if db.style == "modelo" and ModelItem() == ASHBRINGER_ITEM then
+        local size = SealCutoutSize(f)
+        cover:SetSize(size, size)
+    end
     f:SetAlpha(db.alpha or 0.25)
     fi:SetToAlpha(db.alpha or 0.25)
     if model.SetModelAlpha then pcall(model.SetModelAlpha, model, db.alpha or 0.25) end
@@ -754,32 +1043,40 @@ end
 -- Lógica
 ------------------------------------------------------------
 local shownStacks = 0
+local shownSeal
 local expiresAt = 0
 local testMode = false
 
 local function ShowMoon(kind, tex, count, exp)
     count = math.min(count, 3)
+    if count < 1 then
+        shownStacks, expiresAt = 0, 0
+        f:Hide()
+        return
+    end
     local c = (db.colors and db.colors[kind]) or SEALS[kind].color
-    if db.style == "modelo" then
+    if db.style == "espada" or (db.style == "modelo" and ActiveWeaponArt()) then
+        weaponArt:Draw(count, c)
+    elseif db.style == "modelo" then
         local key = kind .. ":" .. count
         if modelClip.lastColor ~= key then
             modelClip.lastColor = key
             SetupModel(model, count, c)
-            SetupPieces(count, c)
+            if SealCutoutEnabled() then SetupPieces(count, c) end
         end
         -- hueco transparente en la calavera hasta tener 3 cargas: el modelo se dibuja en 4 trozos
-        local hole = db.coverOn ~= false and count < 3
-        PlacePieces()
+        local hole = SealCutoutEnabled() and count < 3
+        if hole then PlacePieces() end
         curLevel, curCol = count, c
         if hole then
             if model:IsShown() then model:Hide() end
             ShowPieces(true)
         else
-            if not model:IsShown() then model:Show() end   -- primero el entero, luego quitar trozos: sin hueco intermedio
+            model:SetShown(ModelItem() ~= nil)   -- primero el entero, luego quitar trozos: sin hueco intermedio
             ShowPieces(false)
         end
         -- desbloqueado: un marco tenue marca dónde está el hueco para poder arrastrarlo
-        if f.unlocked and db.style == "modelo" then
+        if f.unlocked and SealCutoutEnabled() then
             local circ = db.holeShape == "circulo"
             cover.tex:SetShown(circ); cover.sq:SetShown(not circ)
             cover.tex:SetVertexColor(1, 1, 1); cover:SetAlpha(0.8); cover:Show()
@@ -787,19 +1084,6 @@ local function ShowMoon(kind, tex, count, exp)
             cover:Hide()
         end
         modelClip:Hide()
-    elseif db.style == "espada" then
-        local frac = count / 3
-        local L = (SWORD_BOTTOM - SWORD_TOP) * frac
-        local a0, a1
-        if db.fillDir == "abajo" then          a0, a1 = 0, SWORD_TOP + L                 -- desde la punta
-        elseif db.fillDir == "derecha" then    a0, a1 = 0, (1 - SWORD_BOTTOM) + L        -- empuñadura a la izquierda
-        elseif db.fillDir == "izquierda" then  a0, a1 = (1 - SWORD_TOP) - L, 1           -- desde la punta (derecha)
-        else                                   a0, a1 = SWORD_BOTTOM - L, 1 end          -- desde la empuñadura
-        PlaceCrop(swordFill, a0, a1)
-        PlaceCrop(swordTint, a0, a1)
-        swordTint:SetVertexColor(c[1], c[2], c[3])
-        swordFill:SetShown(count > 0)
-        swordTint:SetShown(count > 0)
     else
         local rev = db.fillDir == "abajo" or db.fillDir == "izquierda"
         for i = 1, 3 do
@@ -808,7 +1092,7 @@ local function ShowMoon(kind, tex, count, exp)
             fill[seg]:SetShown(i <= count)
         end
     end
-    flame:SetVertexColor(c[1], c[2], c[3])
+    ColorAura(flame, c)
     icon:SetTexture(SealIcon(kind))
     expiresAt = exp or 0
 
@@ -818,7 +1102,7 @@ local function ShowMoon(kind, tex, count, exp)
     end
 
     local full = count >= 3
-    flame:SetShown(full)
+    flame:SetShown(full and flame.auraEnabled)
     timer:SetShown(full)
     if full and shownStacks < 3 then
         if db.sound then
@@ -830,6 +1114,7 @@ local function ShowMoon(kind, tex, count, exp)
         end
     end
     shownStacks = count
+    shownSeal = kind
 end
 
 local function HideMoon()
@@ -847,6 +1132,7 @@ M:SetFrameStrata("MEDIUM")
 M:Hide()
 local mLit = CreateFrame("Frame", nil, M); mLit:SetAllPoints()
 local mTop = CreateFrame("Frame", nil, M); mTop:SetAllPoints(); mTop:SetFrameLevel(mLit:GetFrameLevel() + 2)
+local mWeaponArt = BuildWeaponArt(M, mTop, true)
 local mFlame = M:CreateTexture(nil, "BORDER"); mFlame:SetBlendMode("ADD"); mFlame:SetPoint("CENTER", M, "CENTER"); mFlame:Hide()
 local mMoonBg = M:CreateTexture(nil, "BACKGROUND"); mMoonBg:SetTexture(MEDIA .. "moon_bg")
 local mFill = {}
@@ -854,11 +1140,6 @@ for i = 1, 3 do
     local t = mLit:CreateTexture(nil, "ARTWORK"); t:SetTexture(MEDIA .. "moon" .. i); t:Hide(); mFill[i] = t
 end
 local mMoonFrame = mTop:CreateTexture(nil, "ARTWORK"); mMoonFrame:SetTexture(MEDIA .. "moon_frame")
-local mSwordBg = M:CreateTexture(nil, "BACKGROUND"); mSwordBg:SetTexture(MEDIA .. "sword_art")
-mSwordBg:SetDesaturated(true); mSwordBg:SetVertexColor(0.38, 0.38, 0.40)
-local mSwordFill = mLit:CreateTexture(nil, "ARTWORK"); mSwordFill:SetTexture(MEDIA .. "sword_art")
-local mSwordTint = mLit:CreateTexture(nil, "OVERLAY"); mSwordTint:SetTexture(MEDIA .. "sword_mask")
-mSwordTint:SetBlendMode("ADD"); mSwordTint:SetAlpha(0.30)
 local mModel = CreateFrame("PlayerModel", nil, M); mModel:Hide()
 local mPieces = {}
 for i = 1, 2 + 2 * HOLE_ROWS do
@@ -878,43 +1159,19 @@ for _, p in ipairs(mPieces) do p.m:SetScript("OnShow", function(self) SetupModel
 
 -- como PlaceCrop, pero dando la vuelta de izquierda a derecha
 local function MirrorCrop(tex, a0, a1)
-    a0, a1 = a0 or 0, a1 or 1
-    tex:ClearAllPoints()
-    local W, H = M:GetWidth(), M:GetHeight()
-    if IsHoriz() then
-        local t0, t1 = 1 - a1, 1 - a0
-        tex:SetPoint("TOPLEFT", M, "TOPLEFT", W * t0, 0)
-        tex:SetSize(math.max(W * (t1 - t0), 0.01), H)
-        tex:SetTexCoord(0, t0, 1, t0, 0, t1, 1, t1)
-    else
-        tex:SetPoint("TOPLEFT", M, "TOPLEFT", 0, -H * a0)
-        tex:SetSize(W, math.max(H * (a1 - a0), 0.01))
-        tex:SetTexCoord(1, 0, a0, a1)
-    end
+    CropTexture(M, tex, a0, a1, true)
 end
 
 local function MirrorPlacePieces(force)
     local W, H = mModel:GetWidth(), mModel:GetHeight()
-    local key = table.concat({ W, H, MirrorVal("mCoverX"), MirrorVal("mCoverY"), db.coverSize or 34,
+    local size = SealCutoutSize(mModel)
+    local key = table.concat({ ModelItem(), W, H, MirrorVal("mCoverX"), MirrorVal("mCoverY"), size,
         db.holeShape or "cuadrado", IsHoriz() and 1 or 0 }, ":")
     if not force and key == mPiecesKey then return end
     mPiecesKey = key
     local x, y = MirrorVal("mCoverX"), MirrorVal("mCoverY")   -- hueco propio de la copia
     if IsHoriz() then x, y = -y, x end
-    local hs = (db.coverSize or 34) / 2
-    local l, r = math.max(0, W / 2 + x - hs), math.min(W, W / 2 + x + hs)
-    local t, b = math.max(0, H / 2 - y - hs), math.min(H, H / 2 - y + hs)
-    local cxh, cyh = (l + r) / 2, (t + b) / 2
-    local rects = { { 0, 0, W, t }, { 0, b, W, H - b } }
-    local rowH = (b - t) / HOLE_ROWS
-    for k = 0, HOLE_ROWS - 1 do
-        local y0 = t + k * rowH
-        local dy = math.abs(y0 + rowH / 2 - cyh)
-        local half = (db.holeShape == "circulo") and ((dy < hs) and math.sqrt(hs * hs - dy * dy) or 0) or hs
-        local hl, hr = math.max(0, cxh - half), math.min(W, cxh + half)
-        rects[#rects + 1] = { 0, y0, hl, rowH }
-        rects[#rects + 1] = { hr, y0, W - hr, rowH }
-    end
+    local rects = ModelHoleRects(W, H, x, y, size)
     for i, p in ipairs(mPieces) do
         local rx, ry, rw, rh = unpack(rects[i])
         p.clip:ClearAllPoints()
@@ -942,62 +1199,61 @@ local function MirrorApplyStyle()
     M:SetScale(db.scale or 1)
     M:SetAlpha(db.alpha or 0.25)
     M:SetSize(horiz and 256 or 128, horiz and 128 or 256)
-    for _, t in ipairs({ mMoonBg, mMoonFrame, mFill[1], mFill[2], mFill[3], mSwordBg }) do MirrorCrop(t, 0, 1) end
-    local isLuna, isSword, isModel = db.style == "luna", db.style == "espada", db.style == "modelo"
+    for _, t in ipairs({ mMoonBg, mMoonFrame, mFill[1], mFill[2], mFill[3] }) do MirrorCrop(t, 0, 1) end
+    local isLuna = db.style == "luna"
+    local isModel = db.style == "modelo" and ModelItem() ~= nil and not ActiveWeaponArt()
+    mWeaponArt:Hide()
     mMoonBg:SetShown(isLuna); mMoonFrame:SetShown(isLuna)
     if not isLuna then for i = 1, 3 do mFill[i]:Hide() end end
-    mSwordBg:SetShown(isSword)
-    if not isSword then mSwordFill:Hide(); mSwordTint:Hide() end
     mModel:ClearAllPoints()
     mModel:SetSize(horiz and 270 or 150, horiz and 150 or 270)
     mModel:SetPoint("CENTER", M, "CENTER", 0, 0)
     mModel:SetShown(isModel)
-    if not isModel then MirrorShowPieces(false) end
-    MirrorPlacePieces(true)
+    if isModel and SealCutoutEnabled() then MirrorPlacePieces(true) else MirrorShowPieces(false) end
+    mMarker:Hide()
     mKey = nil
-    local st = STYLES[db.style] or STYLES.luna
-    mFlame:SetTexture(MEDIA .. st.flame .. (horiz and "_h" or ""))
-    mFlame:SetSize(horiz and 512 or 256, horiz and 256 or 512)
+    ConfigureAura(mFlame, M, true)
 end
 
 local function MirrorShow(kind, count)
-    if not db.mirror then M:Hide(); return end
+    if not db.mirror or not count or count < 1 then
+        M:Hide()
+        return
+    end
     count = math.min(count or 0, 3)
     local c = (db.colors and db.colors[kind]) or SEALS[kind].color
-    if db.style == "modelo" then
+    if db.style == "espada" or (db.style == "modelo" and ActiveWeaponArt()) then
+        mWeaponArt:Draw(count, c)
+    elseif db.style == "modelo" then
         mLevel, mCol = count, c
         local key = kind .. ":" .. count
         if mKey ~= key then
             mKey = key
             SetupModel(mModel, count, c, true)
-            for _, p in ipairs(mPieces) do SetupModel(p.m, count, c, true) end
+            if SealCutoutEnabled() then
+                for _, p in ipairs(mPieces) do SetupModel(p.m, count, c, true) end
+            end
         end
         if mModel.SetModelAlpha then pcall(mModel.SetModelAlpha, mModel, db.alpha or 0.25) end
-        local hole = db.coverOn ~= false and count < 3
-        MirrorPlacePieces()
-        local mx, my = MirrorVal("mCoverX"), MirrorVal("mCoverY")
-        if IsHoriz() then mx, my = -my, mx end
-        mMarker:ClearAllPoints()
-        mMarker:SetPoint("CENTER", M, "CENTER", mx, my)
-        mMarker:SetSize(db.coverSize or 34, db.coverSize or 34)
-        mMarker:SetShown(f.unlocked == true)
+        local hole = SealCutoutEnabled() and count < 3
+        if hole then MirrorPlacePieces() end
+        local showMarker = f.unlocked == true and SealCutoutEnabled()
+        if showMarker then
+            local mx, my = MirrorVal("mCoverX"), MirrorVal("mCoverY")
+            if IsHoriz() then mx, my = -my, mx end
+            mMarker:ClearAllPoints()
+            mMarker:SetPoint("CENTER", M, "CENTER", mx, my)
+            local size = SealCutoutSize(mModel)
+            mMarker:SetSize(size, size)
+        end
+        mMarker:SetShown(showMarker)
         if hole then
             if mModel:IsShown() then mModel:Hide() end
             MirrorShowPieces(true)
         else
-            if not mModel:IsShown() then mModel:Show() end
+            mModel:SetShown(ModelItem() ~= nil)
             MirrorShowPieces(false)
         end
-    elseif db.style == "espada" then
-        local L = (SWORD_BOTTOM - SWORD_TOP) * (count / 3)
-        local a0, a1
-        if db.fillDir == "abajo" then          a0, a1 = 0, SWORD_TOP + L
-        elseif db.fillDir == "derecha" then    a0, a1 = 0, (1 - SWORD_BOTTOM) + L
-        elseif db.fillDir == "izquierda" then  a0, a1 = (1 - SWORD_TOP) - L, 1
-        else                                   a0, a1 = SWORD_BOTTOM - L, 1 end
-        MirrorCrop(mSwordFill, a0, a1); MirrorCrop(mSwordTint, a0, a1)
-        mSwordTint:SetVertexColor(c[1], c[2], c[3])
-        mSwordFill:SetShown(count > 0); mSwordTint:SetShown(count > 0)
     else
         local rev = db.fillDir == "abajo" or db.fillDir == "izquierda"
         for i = 1, 3 do
@@ -1006,8 +1262,8 @@ local function MirrorShow(kind, count)
             mFill[seg]:SetShown(i <= count)
         end
     end
-    mFlame:SetVertexColor(c[1], c[2], c[3])
-    mFlame:SetShown(count >= 3)
+    ColorAura(mFlame, c)
+    mFlame:SetShown(count >= 3 and mFlame.auraEnabled)
     MirrorPosition()
     M:Show()
 end
@@ -1017,7 +1273,7 @@ M:SetScript("OnUpdate", function(self, elapsed)
     if mFlame:IsShown() then
         mFlameT = mFlameT + elapsed
         local fr = math.floor(mFlameT * FLAME_FPS) % FLAME_FRAMES
-        mFlame:SetTexCoord((fr + 1) / FLAME_FRAMES, fr / FLAME_FRAMES, 0, 1)   -- llamas en espejo
+        SetAuraFrame(mFlame, fr, true)
     end
     mPosT = mPosT + elapsed
     if mPosT > 0.1 then mPosT = 0; MirrorPosition() end      -- sigue a la principal si la mueves
@@ -1026,14 +1282,19 @@ end)
 -- enganchar la copia a las funciones de la principal
 do
     local _apply, _show, _hide, _pos = ApplyStyle, ShowMoon, HideMoon, ApplyPosition
-    ApplyStyle = function(...) _apply(...); MirrorApplyStyle() end
+    ApplyStyle = function(...)
+        _apply(...)
+        MirrorApplyStyle()
+        modelClip.lastColor = nil
+    end
     ShowMoon = function(kind, tex, count, exp) _show(kind, tex, count, exp); MirrorShow(kind, count) end
     HideMoon = function(...) _hide(...); if not f:IsShown() then M:Hide() end end
     ApplyPosition = function(...) _pos(...); M:SetScale(db.scale or 1); M:SetAlpha(db.alpha or 0.25); MirrorPosition() end
 end
 
 local UWSetSeal, UWSync   -- se definen más abajo
-local RegisterSettingsPanel  -- se define con el menú
+local RegisterSettingsPanel
+local Print, ApplyViewer, UpdateAppearance, opt
 
 -- Registro de diagnóstico (se guarda en PallyWrathDB.log al hacer /reload o salir)
 local logSeen = {}
@@ -1054,6 +1315,16 @@ local ECHO_DUR = 15
 
 local function IsSecret(v)
     return issecretvalue and issecretvalue(v) or false
+end
+
+local equipmentReadPending
+local function RefreshEquipment()
+    local ok, id = pcall(GetInventoryItemID, "player", MAIN_HAND)
+    if not ok or IsSecret(id) then equipmentReadPending = true; return false end
+    equipmentReadPending = false
+    if equippedItem == id then return false end
+    equippedItem = id
+    return true
 end
 
 local function EchoKindById(id)
@@ -1359,9 +1630,9 @@ local function CombatScan()
     local item = FindUWItem()
     if not item then
         Log("combate: no encuentro el icono de Unsealed Wrath en el visor de Blizzard")
-        if not uw.warned and PW_Print then
+        if not uw.warned and Print then
             uw.warned = true
-            PW_Print("En combate no encuentro el icono de Unsealed Wrath. Abre el Cooldown Manager > Beneficios rastreados y añade Unsealed Wrath.")
+            Print("En combate no encuentro el icono de Unsealed Wrath. Abre el Cooldown Manager > Beneficios rastreados y añade Unsealed Wrath.")
         end
         HideMoon()
         return
@@ -1492,7 +1763,7 @@ f:SetScript("OnUpdate", function(self, elapsed)
     if flame:IsShown() then
         flameTime = flameTime + elapsed
         local fr = math.floor(flameTime * FLAME_FPS) % FLAME_FRAMES
-        flame:SetTexCoord(fr / FLAME_FRAMES, (fr + 1) / FLAME_FRAMES, 0, 1)
+        SetAuraFrame(flame, fr, false)
     end
     self.t = (self.t or 0) + elapsed
     if self.t < 0.1 then return end
@@ -1513,6 +1784,9 @@ end)
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+ev:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+ev:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 ev:RegisterUnitEvent("UNIT_AURA", "player")
 ev:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 
@@ -1527,56 +1801,19 @@ local function Welcome()
         TR("|r cargado, por |cff00ccffApocSteel|r. |cffffd100/pw|r abre las opciones - |cffffd100/pw ayuda|r"))
 end
 
+local function RedrawEquipment()
+    if db.style == "modelo" and db.useEquipped then UpdateAppearance() end
+    if opt then opt:Refresh() end
+end
+
 ev:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON then return end
         PallyWrathDB = PallyWrathDB or {}
         db = PallyWrathDB
         CopyDefaults(DEFAULTS, db)
+        RefreshEquipment()
         db.log = {}   -- registro nuevo en cada carga
-        if (db.alphaV or 0) < 2 then db.alpha = 0.25; db.alphaV = 2 end   -- nueva opacidad base
-        if (db.facingV or 0) < 3 then          -- encuadre base del modelo (el que eligió Julen)
-            db.modelFacing, db.modelPitch, db.modelRoll = 0, 255, 90
-            db.modelZoom, db.modelY = 1.0, 0.1
-            db.facingV = 3
-        end
-        if (db.coverV or 0) < 3 then           -- hueco de la calavera ajustado por Julen (cuadrado)
-            db.coverX, db.coverY, db.coverSize, db.holeShape = -22, 48, 34, "cuadrado"
-            db.coverV = 3
-        end
-        if (db.styleV or 0) < 1 then db.style = "espada"; db.styleV = 1 end   -- estilo base: Espada
-        if (db.profV or 0) < 2 then            -- encuadres base (uno por dirección) elegidos por Julen
-            db.prof = {}
-            for o, p in pairs(PROFILE_DEFAULTS) do
-                db.prof[o] = {}
-                for k, v in pairs(p) do db.prof[o][k] = v end
-            end
-            db._prof = nil
-            db.profV = 2
-        end
-        if (db.profV or 0) < 3 then            -- encuadre base de "hacia la izquierda" (Julen)
-            db.prof = db.prof or {}
-            db.prof.izquierda = {}
-            for k, v in pairs(PROFILE_DEFAULTS.izquierda) do db.prof.izquierda[k] = v end
-            if db._prof == "izquierda" then db._prof = nil end   -- recargar si está en uso
-            db.profV = 3
-        end
-        if (db.profV or 0) < 4 then            -- restaurar las 4 direcciones con los valores de Julen
-            db.prof = {}
-            for o, p in pairs(PROFILE_DEFAULTS) do
-                db.prof[o] = {}
-                for k, v in pairs(p) do db.prof[o][k] = v end
-            end
-            db._prof = nil
-            db.profV = 4
-        end
-        if (db.profV or 0) < 5 then            -- encuadre nuevo de "hacia arriba" (Julen); el resto se conserva
-            db.prof = db.prof or {}
-            db.prof.arriba = {}
-            for k, v in pairs(PROFILE_DEFAULTS.arriba) do db.prof.arriba[k] = v end
-            if db._prof == "arriba" then db._prof = nil end
-            db.profV = 5
-        end
         pcall(RegisterSettingsPanel)
         ApplyStyle()
         ApplyPosition()
@@ -1584,9 +1821,18 @@ ev:SetScript("OnEvent", function(self, event, arg1, ...)
         if class ~= "PALADIN" then
             self:UnregisterEvent("UNIT_AURA")
         end
-    elseif event == "PLAYER_ENTERING_WORLD" and not welcomed then
+    elseif event == "PLAYER_ENTERING_WORLD" then
         Welcome()
-        if db then Scan() end
+        if db then
+            if RefreshEquipment() then RedrawEquipment() end
+            Scan()
+        end
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_REGEN_ENABLED" then
+        local refresh = event == "PLAYER_EQUIPMENT_CHANGED" and arg1 == MAIN_HAND
+            or event == "PLAYER_REGEN_ENABLED" and equipmentReadPending
+        if db and refresh and RefreshEquipment() then RedrawEquipment() end
+    elseif event == "GET_ITEM_INFO_RECEIVED" then
+        if db and equippedItem and not IsSecret(arg1) and arg1 == equippedItem and ... == true then RedrawEquipment() end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         if not db then return end
         local spellID = select(2, ...)   -- unit, castGUID, spellID
@@ -1648,22 +1894,20 @@ local SEAL_ORDER = { "command", "righteousness", "wisdom", "light", "justice", "
 local SEAL_LABEL = { command = "Orden", righteousness = "Rectitud", wisdom = "Sabiduría",
                      light = "Luz", justice = "Justicia", fury = "Furia" }
 
-local opt
 local function SealColor(kind) return (db.colors and db.colors[kind]) or SEALS[kind].color end
 
-local function OpenColorPicker(kind, swatch)
+local function OpenColorPicker(kind, changed)
     local c = SealColor(kind)
-    local old = { c[1], c[2], c[3] }
-    local function apply(r, g, b)
-        db.colors[kind] = { r, g, b }
-        swatch:SetColorTexture(r, g, b)
-        if f:IsShown() then ShowMoon(kind, nil, 3, GetTime() + 15) end
-    end
+    local old = db.colors[kind]
     local function onChange()
         local r, g, b = ColorPickerFrame:GetColorRGB()
-        apply(r, g, b)
+        db.colors[kind] = { r, g, b }
+        changed()
     end
-    local function onCancel() apply(old[1], old[2], old[3]) end
+    local function onCancel()
+        db.colors[kind] = old
+        changed()
+    end
     if ColorPickerFrame.SetupColorPickerAndShow then
         ColorPickerFrame:SetupColorPickerAndShow({ r = c[1], g = c[2], b = c[3], hasOpacity = false,
             swatchFunc = onChange, cancelFunc = onCancel })
@@ -1675,440 +1919,730 @@ local function OpenColorPicker(kind, swatch)
     end
 end
 
+UpdateAppearance = function()
+    ApplyStyle()
+    ApplyPosition()
+    if f:IsShown() and shownSeal then
+        ShowMoon(shownSeal, nil, shownStacks, expiresAt)
+    end
+end
+
+local function PreviewTexture(parent, asset, layer, sublevel)
+    local texture = parent:CreateTexture(nil, layer, nil, sublevel)
+    texture:SetTexture(MEDIA .. asset)
+    return texture
+end
+
+local function BuildPreview(parent, mirrored)
+    local view = CreateFrame("Frame", nil, parent)
+    local art = CreateFrame("Frame", nil, view)
+    art:SetAllPoints()
+    art:SetFrameLevel(view:GetFrameLevel() + 3)
+
+    local flame = art:CreateTexture(nil, "BORDER")
+    flame:SetPoint("CENTER")
+    flame:SetBlendMode("ADD")
+    local moonBg = PreviewTexture(art, "moon_bg", "BACKGROUND")
+    local moonFrame = PreviewTexture(art, "moon_frame", "OVERLAY")
+    local moonFill = {}
+    for i = 1, 3 do moonFill[i] = PreviewTexture(art, "moon" .. i, "ARTWORK") end
+
+    local seal = art:CreateTexture(nil, "OVERLAY", nil, 1)
+    seal:SetSize(30, 30)
+    seal:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    local ring = PreviewTexture(art, "ash_frame", "OVERLAY", 2)
+    ring:SetSize(42, 42)
+    ring:SetPoint("CENTER", seal, "CENTER")
+    local timer = art:CreateFontString(nil, "OVERLAY", "NumberFontNormalHuge")
+    local weaponLayers = BuildWeaponArt(view, art, mirrored)
+
+    local model, clips
+    local function DrawModel(count, color, alpha, horizontal)
+        if not model then
+            model = CreateFrame("PlayerModel", nil, view)
+            model:SetPoint("CENTER")
+            clips = {}
+        end
+        local width, height = horizontal and 270 or 150, horizontal and 150 or 270
+        model:SetSize(width, height)
+        local hole = SealCutoutEnabled() and count < 3
+        model:SetShown(not hole)
+        if not hole then
+            SetupModel(model, count, color, mirrored, alpha)
+            for _, clip in ipairs(clips) do clip:Hide() end
+            return
+        end
+        local x = mirrored and MirrorVal("mCoverX") or db.coverX
+        local y = mirrored and MirrorVal("mCoverY") or db.coverY
+        if horizontal then x, y = -y, x end
+        for i, rect in ipairs(ModelHoleRects(width, height, x, y, SealCutoutSize(model))) do
+            local clip = clips[i]
+            if not clip then
+                clip = CreateFrame("Frame", nil, view)
+                if clip.SetClipsChildren then clip:SetClipsChildren(true) end
+                clip.weapon = CreateFrame("PlayerModel", nil, clip)
+                clip.weapon:SetAllPoints(model)
+                clips[i] = clip
+            end
+            clip:ClearAllPoints()
+            clip:SetPoint("TOPLEFT", model, "TOPLEFT", rect[1], -rect[2])
+            clip:SetSize(math.max(rect[3], 0.01), math.max(rect[4], 0.01))
+            clip:Show()
+            SetupModel(clip.weapon, count, color, mirrored, alpha)
+        end
+    end
+
+    local elapsed, full = 0, false
+    view:SetScript("OnUpdate", function(_, delta)
+        if not flame:IsShown() then return end
+        elapsed = (elapsed + delta) % (FLAME_FRAMES / FLAME_FPS)
+        local fr = math.floor(elapsed * FLAME_FPS)
+        SetAuraFrame(flame, fr, mirrored)
+    end)
+
+    function view:Draw(kind, count)
+        local style = STYLES[db.style]
+        local color, horizontal = SealColor(kind), IsHoriz()
+        local alpha = db.alpha or DEFAULTS.alpha
+        self:SetSize(horizontal and 256 or 128, horizontal and 128 or 256)
+        art:SetAlpha(alpha)
+        local isMoon = db.style == "luna"
+        moonBg:SetShown(isMoon)
+        moonFrame:SetShown(isMoon)
+        if isMoon then
+            CropTexture(self, moonBg, 0, 1, mirrored)
+            CropTexture(self, moonFrame, 0, 1, mirrored)
+        end
+        local reverse = db.fillDir == "abajo" or db.fillDir == "izquierda"
+        for i, segment in ipairs(moonFill) do
+            local active = isMoon and (reverse and 4 - i or i) <= count
+            segment:SetShown(active)
+            if active then
+                CropTexture(self, segment, 0, 1, mirrored)
+                segment:SetVertexColor(color[1], color[2], color[3])
+            end
+        end
+        local isWeapon = db.style == "modelo"
+        local useArt = db.style == "espada" or (isWeapon and ActiveWeaponArt())
+        if useArt then weaponLayers:Draw(count, color) else weaponLayers:Hide() end
+        if isWeapon and ModelItem() and not useArt then
+            DrawModel(count, color, alpha, horizontal)
+        elseif model then
+            model:Hide()
+            for _, clip in ipairs(clips) do clip:Hide() end
+        end
+
+        full = count == 3
+        ConfigureAura(flame, self, mirrored)
+        flame:SetShown(full and flame.auraEnabled)
+        ColorAura(flame, color)
+        local showIcon = not mirrored and db.showIcon ~= false
+        seal:SetShown(showIcon)
+        ring:SetShown(showIcon)
+        timer:SetShown(full and not mirrored)
+        if not mirrored then
+            seal:ClearAllPoints()
+            timer:ClearAllPoints()
+            if db.iconOffset then
+                seal:SetPoint("CENTER", self, "CENTER", db.iconOffset[1], db.iconOffset[2])
+            elseif horizontal then
+                seal:SetPoint("CENTER", self, "LEFT", -22, 0)
+            else
+                seal:SetPoint("CENTER", self, "TOPLEFT", style.iconX, -128)
+            end
+            if horizontal then
+                timer:SetPoint("LEFT", self, "RIGHT", 10, 0)
+            else
+                timer:SetPoint("LEFT", self, "TOPLEFT", style.timerX, -128)
+            end
+            seal:SetTexture(SealIcon(kind))
+            timer:SetText("15")
+        end
+    end
+
+    return view
+end
+
+
 local function BuildOptions()
-    opt = CreateFrame("Frame", "PallyWrathOptions", UIParent, "BasicFrameTemplateWithInset")
-    opt:SetSize(330, 700)
+    local function L(es, en) return IS_ES and es or en end
+    local function Plate(parent, layer, r, g, b, a)
+        local texture = parent:CreateTexture(nil, layer)
+        texture:SetAllPoints()
+        texture:SetColorTexture(r, g, b, a)
+        return texture
+    end
+
+    opt = CreateFrame("Frame", "PallyWrathOptions", UIParent)
+    opt:Hide()
+    opt:SetSize(820, 530)
     opt:SetPoint("CENTER")
     opt:SetFrameStrata("DIALOG")
+    opt:SetClampedToScreen(true)
     opt:SetMovable(true)
     opt:EnableMouse(true)
-    opt:RegisterForDrag("LeftButton")
-    opt:SetScript("OnDragStart", opt.StartMoving)
-    opt:SetScript("OnDragStop", opt.StopMovingOrSizing)
-    opt:SetClampedToScreen(true)
-    tinsert(UISpecialFrames, "PallyWrathOptions")   -- se cierra con Esc
-    local title = rawget(opt, "TitleText")
-    if type(title) ~= "table" then
-        title = opt:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        title:SetPoint("TOP", 0, -5)
-    end
-    title:SetText(TR("|cffF58CBAPally Wrath|r - Opciones"))
+    tinsert(UISpecialFrames, "PallyWrathOptions")
+    Plate(opt, "BACKGROUND", 0.068, 0.056, 0.076, 1)
 
-    local y = -36
-    local P = opt   -- contenedor actual (opt o la caja del modelo)
-    local function Header(text)
-        local h = P:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        h:SetPoint("TOPLEFT", 18, y)
-        h:SetText(TR(text))
-        y = y - 22
-        return h
-    end
-    local function Button(text, w, x, onClick)
-        local b = CreateFrame("Button", nil, P, "UIPanelButtonTemplate")
-        b:SetSize(w, 22)
-        b:SetPoint("TOPLEFT", x, y)
-        b:SetText(TR(text))
-        b:SetScript("OnClick", onClick)
-        return b
+    local function Text(parent, text, font, x, y, width)
+        local label = parent:CreateFontString(nil, "OVERLAY", font)
+        label:SetPoint("TOPLEFT", x, y)
+        if width then label:SetWidth(width) end
+        label:SetJustifyH("LEFT")
+        label:SetText(text)
+        return label
     end
 
-    -- Estilo
-    Header("Estilo")
-    opt.styleBtns = {}
-    local x = 18
-    for _, key in ipairs({ "luna", "espada", "modelo" }) do
-        local b = Button(STYLES[key].name, 96, x, function()
-            db.style = key
-            ApplyStyle()
+    local function Button(parent, text, x, y, width, height, click)
+        local button = CreateFrame("Button", nil, parent)
+        button:SetPoint("TOPLEFT", x, y)
+        button:SetSize(width, height)
+        button.bg = Plate(button, "BACKGROUND", 0.16, 0.12, 0.16, 1)
+        Plate(button, "HIGHLIGHT", 1, 0.74, 0.40, 0.13)
+        local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        label:SetPoint("CENTER")
+        label:SetText(text)
+        button.label = label
+        button:SetScript("OnClick", click)
+        return button
+    end
+
+    local function Selected(button, active)
+        if active then
+            button.bg:SetColorTexture(0.34, 0.19, 0.22, 1)
+            button.label:SetTextColor(1, 0.83, 0.53)
+        else
+            button.bg:SetColorTexture(0.16, 0.12, 0.16, 1)
+            button.label:SetTextColor(0.91, 0.87, 0.90)
+        end
+    end
+
+    local titleBar = CreateFrame("Frame", nil, opt)
+    titleBar:SetPoint("TOPLEFT")
+    titleBar:SetPoint("TOPRIGHT")
+    titleBar:SetHeight(63)
+    Plate(titleBar, "BACKGROUND", 0.13, 0.09, 0.13, 1)
+    local titleIcon = PreviewTexture(titleBar, "icon", "ARTWORK")
+    titleIcon:SetSize(32, 32)
+    titleIcon:SetPoint("TOPLEFT", 18, -15)
+    local title = Text(titleBar, "Pally Wrath", "GameFontNormalLarge", 62, -14)
+    title:SetTextColor(1, 0.83, 0.62)
+    Text(titleBar, "Unsealed Wrath", "GameFontHighlightSmall", 63, -37)
+    titleBar:EnableMouse(true)
+    titleBar:RegisterForDrag("LeftButton")
+    titleBar:SetScript("OnDragStart", function() opt:StartMoving() end)
+    titleBar:SetScript("OnDragStop", function() opt:StopMovingOrSizing() end)
+    local close = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -10, -12)
+    close:SetScript("OnClick", function() opt:Hide() end)
+
+    local slots = {}
+    local function RefreshWith(fn) slots[#slots + 1] = fn end
+    local function ChangeAppearance()
+        UpdateAppearance()
+        opt:Refresh()
+    end
+
+    local tabs, pages, selectedTab = {}, {}, 1
+    for i, name in ipairs({ L("Apariencia", "Appearance"), L("Posición", "Position"),
+                            L("Alertas", "Alerts"), L("Avanzado", "Advanced") }) do
+        tabs[i] = Button(opt, name, 18 + (i - 1) * 122, -76, 116, 28, function()
+            selectedTab = i
             opt:Refresh()
-            RunTest(uw and uw.seal or "command")
         end)
-        opt.styleBtns[key] = b
-        x = x + 100
+        local page = CreateFrame("Frame", nil, opt)
+        page:SetPoint("TOPLEFT", 18, -116)
+        page:SetSize(482, 396)
+        Plate(page, "BACKGROUND", 0.10, 0.084, 0.106, 1)
+        pages[i] = page
     end
-    y = y - 34
 
-    -- Dirección de carga
-    Header("Dirección de carga")
-    opt.dirBtns = {}
-    local DIRS = { { "arriba", "Hacia arriba" }, { "abajo", "Hacia abajo" },
-                   { "derecha", "Hacia la derecha" }, { "izquierda", "Hacia la izquierda" } }
-    for i, d in ipairs(DIRS) do
-        local col = (i - 1) % 2
-        if i == 3 then y = y - 26 end
-        local b = Button(d[2], 144, 18 + col * 150, function()
-            db.fillDir = d[1]
-            ApplyStyle()
+    local function Header(parent, name, y)
+        return Text(parent, name, "GameFontNormal", 16, y)
+    end
+
+    local function Check(parent, label, y, get, set)
+        local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+        check:SetPoint("TOPLEFT", 14, y)
+        check:SetSize(26, 26)
+        Text(check, label, "GameFontHighlight", 29, -7, 410)
+        check:SetScript("OnClick", function(self)
+            set(not not self:GetChecked())
             opt:Refresh()
-            RunTest(uw and uw.seal or "command")
         end)
-        opt.dirBtns[d[1]] = b
+        RefreshWith(function() check:SetChecked(get()) end)
+        return check
     end
-    y = y - 34
 
-    -- Tamaño y cargas mínimas
-    local function Stepper(label, get, set, minV, maxV, step, fmt)
-        local l = P:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        l:SetPoint("TOPLEFT", 18, y - 4)
-        l:SetText(TR(label))
-        local v = P:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        v:SetPoint("TOPLEFT", 236, y - 4)
-        local minus = Button("-", 26, 200, function()
-            set(math.max(minV, math.floor((get() - step) * 100 + 0.5) / 100)); opt:Refresh()
-        end)
-        local plus = Button("+", 26, 280, function()
-            set(math.min(maxV, math.floor((get() + step) * 100 + 0.5) / 100)); opt:Refresh()
-        end)
-        y = y - 30
-        return function() v:SetText(string.format(fmt, get())) end
-    end
-    Header("Indicador")
-    opt.refreshScale = Stepper("Tamaño", function() return db.scale end,
-        function(v) db.scale = v; ApplyPosition() end, 0.5, 2.5, 0.1, "%.1f")
-    opt.refreshMin = Stepper("Aparece desde (cargas)", function() return db.minStacks end,
-        function(v) db.minStacks = v; Scan() end, 1, 3, 1, "%d")
-
-    -- Barra de opacidad
-    do
-        local l = P:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        l:SetPoint("TOPLEFT", 18, y - 4)
-        l:SetText(TR("Opacidad"))
-        local val = P:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        val:SetPoint("TOPLEFT", 270, y - 4)
-        local sl = CreateFrame("Slider", nil, P)
-        sl:SetOrientation("HORIZONTAL")
-        sl:SetSize(150, 16)
-        sl:SetPoint("TOPLEFT", 108, y - 2)
-        sl:SetMinMaxValues(0.2, 1)
-        sl:SetValueStep(0.05)
-        if sl.SetObeyStepOnDrag then sl:SetObeyStepOnDrag(true) end
-        local track = sl:CreateTexture(nil, "BACKGROUND")
-        track:SetPoint("LEFT", 0, 0); track:SetPoint("RIGHT", 0, 0); track:SetHeight(6)
-        track:SetColorTexture(0.12, 0.12, 0.14, 1)
-        local trackB = sl:CreateTexture(nil, "BORDER")
-        trackB:SetPoint("TOPLEFT", track, -1, 1); trackB:SetPoint("BOTTOMRIGHT", track, 1, -1)
-        trackB:SetColorTexture(0.75, 0.6, 0.25, 1)
-        trackB:SetDrawLayer("BACKGROUND", -1)
-        local thumb = sl:CreateTexture(nil, "ARTWORK")
+    local function Slider(parent, label, x, y, width, min, max, step, fmt, get, set)
+        Text(parent, label, "GameFontHighlight", x, y)
+        local value = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        value:SetPoint("TOPRIGHT", parent, "TOPLEFT", x + width, y)
+        local slider = CreateFrame("Slider", nil, parent)
+        slider:SetPoint("TOPLEFT", x + 26, y - 17)
+        slider:SetSize(width - 52, 18)
+        slider:SetOrientation("HORIZONTAL")
+        slider:SetMinMaxValues(min, max)
+        slider:SetValueStep(step)
+        if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+        local track = slider:CreateTexture(nil, "BACKGROUND")
+        track:SetPoint("LEFT")
+        track:SetPoint("RIGHT")
+        track:SetHeight(5)
+        track:SetColorTexture(0.39, 0.28, 0.34, 1)
+        local thumb = slider:CreateTexture(nil, "ARTWORK")
+        thumb:SetSize(24, 24)
         thumb:SetTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-        thumb:SetSize(32, 32)
-        sl:SetThumbTexture(thumb)
-        sl:EnableMouseWheel(true)
-        sl:SetScript("OnMouseWheel", function(self, d) self:SetValue(self:GetValue() + d * 0.05) end)
-        sl:SetScript("OnValueChanged", function(self, v)
-            v = math.floor(v * 20 + 0.5) / 20
-            db.alpha = v
-            val:SetText(string.format("%d%%", v * 100))
-            ApplyPosition()
-            if not f:IsShown() and not InCombatLockdown() then RunTest(uw and uw.seal or "command") end
+        slider:SetThumbTexture(thumb)
+        local updating
+        local function adjust(delta)
+            slider:SetValue(math.max(min, math.min(max, slider:GetValue() + delta * step)))
+        end
+        Button(parent, "−", x, y - 17, 19, 18, function() adjust(-1) end)
+        Button(parent, "+", x + width - 19, y - 17, 19, 18, function() adjust(1) end)
+        slider:EnableMouseWheel(true)
+        slider:SetScript("OnMouseWheel", function(_, delta) adjust(delta) end)
+        slider:SetScript("OnValueChanged", function(_, v)
+            if not updating then set(math.floor(v / step + 0.5) * step) end
         end)
-        opt.refreshAlpha = function()
-            sl:SetValue(db.alpha or 0.8)
-            val:SetText(string.format("%d%%", (db.alpha or 0.8) * 100))
-        end
-        y = y - 32
+        RefreshWith(function()
+            updating = true
+            slider:SetValue(get())
+            value:SetText(string.format(fmt, get()))
+            updating = false
+        end)
     end
 
-    -- Casillas
-    local function Check(label, get, set)
-        local c = CreateFrame("CheckButton", nil, P, "UICheckButtonTemplate")
-        c:SetPoint("TOPLEFT", 14, y)
-        c:SetSize(26, 26)
-        local t = rawget(c, "Text") or rawget(c, "text")
-        if type(t) ~= "table" then
-            t = P:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            t:SetPoint("LEFT", c, "RIGHT", 2, 0)
+    local preview = CreateFrame("Frame", nil, opt)
+    preview:SetPoint("TOPRIGHT", -18, -76)
+    preview:SetSize(284, 436)
+    Plate(preview, "BACKGROUND", 0.12, 0.095, 0.123, 1)
+    Header(preview, L("Vista previa", "Preview"), -16)
+    local stage = CreateFrame("Frame", nil, preview)
+    stage:SetPoint("TOPLEFT", 12, -43)
+    stage:SetSize(260, 196)
+    if stage.SetClipsChildren then stage:SetClipsChildren(true) end
+    Plate(stage, "BACKGROUND", 0.057, 0.054, 0.068, 1)
+    local emptyHand = Text(stage, L("Sin arma en mano principal", "No main-hand weapon equipped"), "GameFontHighlightSmall", 12, -92, 236)
+    emptyHand:SetJustifyH("CENTER")
+    local mainView, copyView = BuildPreview(stage, false), BuildPreview(stage, true)
+    local previewSeal, previewCount = uw.seal or "command", 2
+    local function ShowPreview()
+        local noWeapon = db.style == "modelo" and db.useEquipped and not equippedItem
+        emptyHand:SetShown(noWeapon and previewCount > 0)
+        mainView:SetShown(previewCount > 0 and not noWeapon)
+        if previewCount == 0 or noWeapon then
+            copyView:Hide()
+            return
         end
-        t:SetText(TR(label))
-        c:SetScript("OnClick", function(self) set(self:GetChecked() and true or false); opt:Refresh() end)
-        y = y - 28
-        return function() c:SetChecked(get()) end
+        local mirror = db.mirror == true
+        local scale = math.min((mirror and 0.55 or 0.64) * db.scale, mirror and 0.63 or 0.68)
+        local effect = db.style == "modelo" and ActiveWeaponEffect()
+        if ModelAuraProfile(effect, false) and effect.aura ~= "sulfuras" then
+            scale = math.min(scale, 0.55)
+        end
+        if mirror and IsHoriz() then scale = math.min(scale, 0.44) end
+        local offset = mirror and (IsHoriz() and 65 or 59) or -12
+        mainView:SetScale(scale)
+        copyView:SetScale(scale)
+        mainView:ClearAllPoints()
+        copyView:ClearAllPoints()
+        mainView:SetPoint("CENTER", stage, "CENTER", offset / scale, 0)
+        copyView:SetPoint("CENTER", stage, "CENTER", -offset / scale, 0)
+        copyView:SetShown(mirror)
+        mainView:Draw(previewSeal, previewCount)
+        if mirror then copyView:Draw(previewSeal, previewCount) end
     end
-    opt.refreshSound = Check("Sonido al llegar a 3 cargas", function() return db.sound end,
-        function(v) db.sound = v end)
-    opt.refreshViewer = Check("Ocultar el visor de beneficios de Blizzard (sigue activo)", function() return db.hideViewer ~= false end,
-        function(v) db.hideViewer = v; PW_ApplyViewer() end)
-    opt.refreshLock = Check("Desbloquear para moverlo (arrastrar)", function() return f.unlocked == true end,
-        function(v) SetLocked(not v) end)
-    opt.refreshMirror = Check("Copia simétrica al otro lado del personaje", function() return db.mirror == true end,
-        function(v) db.mirror = v; ApplyStyle(); RunTest(uw and uw.seal or "command") end)
-    opt.refreshIcon = Check("Mostrar el icono del sello", function() return db.showIcon ~= false end,
-        function(v) db.showIcon = v; ApplyStyle(); if not f:IsShown() then RunTest(uw and uw.seal or "command") end end)
-    local hintIcon = P:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    hintIcon:SetPoint("TOPLEFT", 42, y + 4)
-    hintIcon:SetText(TR("Desbloqueado, el icono se arrastra por separado."))
-    hintIcon:SetWidth(165); hintIcon:SetJustifyH("LEFT")
-    Button("Recolocar icono", 120, 190, function()
-        db.iconOffset = nil; ApplyStyle()
-        if not f:IsShown() then RunTest(uw and uw.seal or "command") end
-    end)
-    y = y - 30
-    y = y - 6
 
-    -- Colores
-    Header("Colores de cada sello")
-    opt.swatches = {}
+    Header(preview, L("Cargas", "Stacks"), -249)
+    for count = 0, 3 do
+        local button = Button(preview, tostring(count), 14 + count * 65, -269, 61, 26, function()
+            previewCount = count
+            opt:Refresh()
+        end)
+        RefreshWith(function() Selected(button, count == previewCount) end)
+    end
+    local sealLabel = Header(preview, "", -313)
     for i, kind in ipairs(SEAL_ORDER) do
-        local col = (i - 1) % 2
-        local row = math.floor((i - 1) / 2)
-        local bx, by = 18 + col * 150, y - row * 30
-        local b = CreateFrame("Button", nil, P)
-        b:SetSize(22, 22)
-        b:SetPoint("TOPLEFT", bx, by)
-        local border = b:CreateTexture(nil, "BACKGROUND")
-        border:SetAllPoints()
-        border:SetColorTexture(0, 0, 0, 1)
-        local sw = b:CreateTexture(nil, "ARTWORK")
-        sw:SetPoint("TOPLEFT", 2, -2)
-        sw:SetPoint("BOTTOMRIGHT", -2, 2)
-        local l = P:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        l:SetPoint("LEFT", b, "RIGHT", 6, 0)
-        l:SetText(TR(SEAL_LABEL[kind]))
-        b:SetScript("OnClick", function(self, button)
-            if button == "RightButton" then
-                db.colors[kind] = nil
-                opt:Refresh()
+        local button = Button(preview, "", 14 + (i - 1) * 43, -333, 39, 31, function()
+            previewSeal = kind
+            opt:Refresh()
+        end)
+        local icon = button:CreateTexture(nil, "ARTWORK")
+        icon:SetPoint("CENTER")
+        icon:SetSize(22, 22)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        RefreshWith(function()
+            icon:SetTexture(SealIcon(kind))
+            Selected(button, previewSeal == kind)
+        end)
+    end
+    local test = Button(preview, L("Probar en pantalla", "Test on screen"), 14, -389, 256, 29, function()
+        if not InCombatLockdown() then RunTest(previewSeal) end
+    end)
+    test:SetScript("OnEnter", function(self)
+        if InCombatLockdown() then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(L("Disponible fuera de combate.", "Available out of combat."))
+            GameTooltip:Show()
+        end
+    end)
+    test:SetScript("OnLeave", GameTooltip_Hide)
+
+    local appearance, position, alerts, advanced = unpack(pages)
+    Header(appearance, TR("Estilo"), -15)
+    local function EquippedName()
+        if not equippedItem then return L("Sin arma en mano principal", "No main-hand weapon equipped") end
+        local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(equippedItem)
+        return not IsSecret(name) and name or tostring(equippedItem)
+    end
+    local styles = {
+        { key = "luna", name = TR(STYLES.luna.name), thumbnail = "moon_frame" },
+        { key = "modelo", name = L("Arma fija", "Fixed weapon") },
+        { key = "equipada", name = L("Arma equipada", "Equipped weapon") },
+    }
+    for i, card in ipairs(styles) do
+        local button = Button(appearance, card.name, 16 + (i - 1) * 152, -37, 144, 63, function()
+            db.useEquipped = card.key == "equipada"
+            if db.useEquipped then
+                RefreshEquipment()
+                db.style = "modelo"
             else
-                OpenColorPicker(kind, sw)
+                db.style = card.key == "luna" and "luna" or (db.weaponStyle or "espada")
+            end
+            ChangeAppearance()
+        end)
+        button.label:ClearAllPoints()
+        button.label:SetPoint("LEFT", 49, 0)
+        button.label:SetWidth(89)
+        button.label:SetJustifyH("LEFT")
+        local thumbnail = button:CreateTexture(nil, "ARTWORK")
+        thumbnail:SetPoint("LEFT", 10, 0)
+        if card.key == "equipada" then
+            thumbnail:SetSize(29, 29)
+            RefreshWith(function()
+                local texture = equippedItem and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(equippedItem)
+                thumbnail:SetTexture(texture or "Interface\\Icons\\INV_Misc_QuestionMark")
+            end)
+            button:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(EquippedName())
+                GameTooltip:AddLine(L("Sigue automáticamente tu arma de mano principal.", "Automatically follows your main-hand weapon."))
+                GameTooltip:Show()
+            end)
+            button:SetScript("OnLeave", GameTooltip_Hide)
+        elseif card.key == "modelo" then
+            thumbnail:SetSize(29, 29)
+            RefreshWith(function()
+                local weapon = WEAPON_BY_ITEM[db.modelItem]
+                if db.weaponStyle == "espada" then
+                    thumbnail:SetSize(23, 46)
+                    thumbnail:SetTexture(MEDIA .. "sword_art")
+                elseif weapon and weapon.art then
+                    thumbnail:SetSize(23, 46)
+                    thumbnail:SetTexture(MEDIA .. weapon.art)
+                else
+                    local itemIcon = C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(db.modelItem)
+                    thumbnail:SetSize(29, 29)
+                    thumbnail:SetTexture(weapon and weapon.icon or itemIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                end
+            end)
+        else
+            thumbnail:SetSize(23, 46)
+            thumbnail:SetTexture(MEDIA .. card.thumbnail)
+            local overlay = PreviewTexture(button, "moon2", "ARTWORK", -1)
+            overlay:SetAllPoints(thumbnail)
+            overlay:SetVertexColor(0.94, 0.62, 0.30)
+        end
+        RefreshWith(function()
+            local active = db.style == "luna" and "luna" or (db.useEquipped and "equipada" or "modelo")
+            Selected(button, card.key == active)
+        end)
+    end
+
+    Header(appearance, L("Armas de Reprensión", "Retribution weapons"), -116)
+    local categories = {
+        { key = "sword", label = L("Espadas", "Swords") },
+        { key = "axe", label = L("Hachas", "Axes") },
+        { key = "mace", label = L("Mazas", "Maces") },
+    }
+    local selectedWeapon = WEAPON_BY_ITEM[db.modelItem]
+    local category = db.weaponStyle ~= "espada" and selectedWeapon and selectedWeapon.category or "sword"
+    local lastItem, lastWeaponStyle = db.modelItem, db.weaponStyle
+    RefreshWith(function()
+        if db.modelItem ~= lastItem or db.weaponStyle ~= lastWeaponStyle then
+            local weapon = WEAPON_BY_ITEM[db.modelItem]
+            category = db.weaponStyle ~= "espada" and weapon and weapon.category or "sword"
+            lastItem, lastWeaponStyle = db.modelItem, db.weaponStyle
+        end
+    end)
+    for i, entry in ipairs(categories) do
+        local tab = Button(appearance, entry.label, 219 + (i - 1) * 82, -109, 77, 24, function()
+            category = entry.key
+            opt:Refresh()
+        end)
+        RefreshWith(function() Selected(tab, category == entry.key) end)
+    end
+
+    local cardColumns = {}
+    local gallery = { CLASSIC_SWORD, unpack(WEAPONS) }
+    local categoryCounts = {}
+    for _, weapon in ipairs(gallery) do
+        categoryCounts[weapon.category] = (categoryCounts[weapon.category] or 0) + 1
+    end
+    for _, weapon in ipairs(gallery) do
+        local column = cardColumns[weapon.category] or 0
+        cardColumns[weapon.category] = column + 1
+        local name = L(weapon.es, weapon.en)
+        local stride = math.min(76, math.floor((appearance:GetWidth() - 22) / categoryCounts[weapon.category]))
+        local width = stride - 5
+        local button = Button(appearance, name, 16 + column * stride, -138, width, 91, function()
+            db.useEquipped = false
+            if weapon.classic then
+                db.style = "espada"
+            else
+                db.modelItem = weapon.id
+                db.style = "modelo"
+            end
+            ChangeAppearance()
+        end)
+        button.label:ClearAllPoints()
+        button.label:SetPoint("TOP", 0, -49)
+        button.label:SetWidth(width - 2)
+        button.label:SetJustifyH("CENTER")
+        local icon = button:CreateTexture(nil, "ARTWORK")
+        if weapon.art then
+            icon:SetSize(21, 42)
+            icon:SetPoint("TOP", 0, -3)
+            icon:SetTexture(MEDIA .. weapon.art)
+        else
+            icon:SetSize(34, 34)
+            icon:SetPoint("TOP", 0, -8)
+            icon:SetTexture(weapon.icon)
+        end
+        local format = Text(button, weapon.art and "2D" or "3D", "GameFontHighlightSmall", 0, -75, width)
+        format:SetJustifyH("CENTER")
+        button:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(L(weapon.esFull or weapon.es, weapon.enFull or weapon.en))
+            GameTooltip:AddLine(weapon.art and L("Ilustración 2D", "2D illustration") or TR("Modelo 3D"))
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", GameTooltip_Hide)
+        RefreshWith(function()
+            button:SetShown(category == weapon.category)
+            Selected(button, (weapon.classic and db.style == "espada")
+                or (db.style == "modelo" and not db.useEquipped and db.modelItem == weapon.id))
+        end)
+    end
+
+    Header(appearance, TR("Colores de cada sello"), -249)
+    for i, kind in ipairs(SEAL_ORDER) do
+        local x = 16 + ((i - 1) % 3) * 153
+        local y = -272 - math.floor((i - 1) / 3) * 35
+        local chip
+        local button = Button(appearance, TR(SEAL_LABEL[kind]), x, y, 144, 30, function(_, mouse)
+            previewSeal = kind
+            if mouse == "RightButton" then
+                db.colors[kind] = nil
+                ChangeAppearance()
+            else
+                opt:Refresh()
+                OpenColorPicker(kind, ChangeAppearance)
             end
         end)
-        b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        b:SetScript("OnEnter", function(self)
+        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        button.label:ClearAllPoints()
+        button.label:SetPoint("LEFT", 34, 0)
+        chip = button:CreateTexture(nil, "ARTWORK")
+        chip:SetPoint("LEFT", 9, 0)
+        chip:SetSize(15, 15)
+        RefreshWith(function()
+            local color = SealColor(kind)
+            chip:SetColorTexture(color[1], color[2], color[3], 1)
+        end)
+        button:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(TR("Clic: cambiar color\nClic derecho: color original"))
             GameTooltip:Show()
         end)
-        b:SetScript("OnLeave", GameTooltip_Hide)
-        opt.swatches[kind] = sw
+        button:SetScript("OnLeave", GameTooltip_Hide)
     end
-    y = y - 96
+    Check(appearance, TR("Mostrar el icono del sello"), -348,
+        function() return db.showIcon ~= false end,
+        function(v) db.showIcon = v; UpdateAppearance() end)
 
-    -- Acciones
-    Button("Probar", 92, 18, function() RunTest(uw and uw.seal or "command") end)
-    Button("Centrar", 92, 118, function()
-        db.point = { "CENTER", "UIParent", "CENTER", 120, -20 }; ApplyPosition()
+    Header(position, TR("Dirección de carga"), -15)
+    local directions = { { "arriba", TR("Hacia arriba") }, { "abajo", TR("Hacia abajo") },
+                         { "derecha", TR("Hacia la derecha") }, { "izquierda", TR("Hacia la izquierda") } }
+    for i, direction in ipairs(directions) do
+        local button = Button(position, direction[2], 16 + ((i - 1) % 2) * 228,
+            -38 - math.floor((i - 1) / 2) * 34, 220, 28, function()
+                db.fillDir = direction[1]
+                ChangeAppearance()
+            end)
+        RefreshWith(function() Selected(button, db.fillDir == direction[1]) end)
+    end
+    Slider(position, TR("Tamaño"), 16, -120, 212, 0.5, 3, 0.05, "%.2f",
+        function() return db.scale end,
+        function(v) db.scale = v; ChangeAppearance() end)
+    Slider(position, TR("Opacidad"), 244, -120, 220, 0.2, 1, 0.05, "%.2f",
+        function() return db.alpha end,
+        function(v) db.alpha = v; ChangeAppearance() end)
+    Check(position, TR("Copia simétrica al otro lado del personaje"), -173,
+        function() return db.mirror == true end,
+        function(v) db.mirror = v; if not v then M:Hide() end; UpdateAppearance() end)
+    Check(position, TR("Desbloquear para moverlo (arrastrar)"), -210,
+        function() return f.unlocked == true end, function(v) SetLocked(not v) end)
+    Text(position, TR("Desbloqueado, el icono se arrastra por separado."), "GameFontHighlightSmall", 44, -243, 418)
+    Button(position, L("Recolocar indicador", "Reset indicator position"), 16, -280, 220, 29, function()
+        db.point = { unpack(DEFAULTS.point) }
+        ApplyPosition()
     end)
-    Button("Restablecer", 92, 218, function()
-        local log = db.log
-        wipe(db)
-        CopyDefaults(DEFAULTS, db)
-        db.log = log
-        ApplyStyle(); ApplyPosition(); opt:Refresh()
+    Button(position, TR("Recolocar icono"), 244, -280, 220, 29, function()
+        db.iconOffset = nil
+        ChangeAppearance()
     end)
-    y = y - 34
-    local hint = P:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    hint:SetPoint("TOPLEFT", 18, y)
-    hint:SetWidth(294)
-    hint:SetJustifyH("LEFT")
-    hint:SetText(TR("En combate las cargas se cuentan con el icono de Unsealed Wrath del visor de buffs de Blizzard: no lo quites de allí. /pw ayuda: lista de comandos."))
-    y = y - 44
-    opt.baseHeight = -y + 10
 
-    -- Sección del modelo 3D: solo visible con el estilo "Modelo 3D"
-    local box = CreateFrame("Frame", nil, opt)
-    box:SetPoint("TOPLEFT", opt, "TOPLEFT", 0, y)
-    box:SetSize(330, 10)
-    opt.modelBox = box
-    local yBox0 = y
-    y = 0
-    P = box
-    Header("Modelo 3D (encuadre)")
-    Button("Espada principal...", 140, 18, function() ToggleModelWindow("main") end)
-    Button("Copia simétrica...", 140, 168, function() ToggleModelWindow("copy") end)
-    y = y - 30
-    local note = P:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", 18, y)
-    note:SetWidth(294); note:SetJustifyH("LEFT")
-    note:SetText(TR("Cada ventana guarda el encuadre de la dirección de carga elegida."))
-    y = y - 18
-    opt.refreshFacing = function() if RefreshModelWindows then RefreshModelWindows() end end
-    box:SetHeight(-y + 10)
-    opt.boxHeight = -y + 10
-    P = opt
-    y = yBox0
+    Slider(alerts, TR("Aparece desde (cargas)"), 16, -20, 240, 1, 3, 1, "%d",
+        function() return db.minStacks end,
+        function(v) db.minStacks = v; Scan(); opt:Refresh() end)
+    Check(alerts, TR("Sonido al llegar a 3 cargas"), -80,
+        function() return db.sound end, function(v) db.sound = v end)
+    Check(alerts, TR("Ocultar el visor de beneficios de Blizzard (sigue activo)"), -119,
+        function() return db.hideViewer == true end,
+        function(v) db.hideViewer = v; ApplyViewer() end)
+    Text(alerts, TR("En combate las cargas se cuentan con el icono de Unsealed Wrath del visor de buffs de Blizzard: no lo quites de allí. /pw ayuda: lista de comandos."),
+        "GameFontHighlightSmall", 44, -157, 405)
+
+    local framing = CreateFrame("Frame", nil, advanced)
+    framing:SetAllPoints()
+    local noModel = Text(advanced, "", "GameFontHighlight", 16, -50, 448)
+    Header(advanced, TR("Modelo 3D (encuadre)"), -15)
+    local profile = Text(framing, "", "GameFontHighlightSmall", 16, -33, 450)
+    local framePages, frameButtons, copy = {}, {}, false
+    for i, label in ipairs({ TR("Espada principal"), TR("Copia simétrica") }) do
+        local isCopy = i == 2
+        frameButtons[i] = Button(framing, label, 16 + (i - 1) * 228, -57, 220, 26, function()
+            copy = isCopy
+            opt:Refresh()
+        end)
+        local group = CreateFrame("Frame", nil, framing)
+        group:SetAllPoints()
+        framePages[i] = group
+        local sealMask = CreateFrame("Frame", nil, group)
+        sealMask:SetAllPoints()
+        RefreshWith(function()
+            local effect = ActiveWeaponEffect()
+            sealMask:SetShown(effect ~= nil and effect.seal == true)
+        end)
+
+        local function ModelSlider(label, index, min, max, step, fmt, key, cutout)
+            local x = index % 2 == 1 and 16 or 244
+            local y = -99 - math.floor((index - 1) / 2) * 45
+            local function get()
+                if isCopy then return MirrorVal(key) end
+                return db[key]
+            end
+            Slider(cutout and sealMask or group, label, x, y, 212, min, max, step, fmt, get, function(v)
+                db[key] = v
+                ChangeAppearance()
+            end)
+        end
+        ModelSlider(TR("Giro"), 1, 0, 360, 5, "%d°", isCopy and "mFacing" or "modelFacing")
+        ModelSlider(TR("Inclinación"), 2, 0, 360, 5, "%d°", isCopy and "mPitch" or "modelPitch")
+        ModelSlider(TR("Rotación"), 3, 0, 360, 5, "%d°", isCopy and "mRoll" or "modelRoll")
+        if isCopy then
+            ModelSlider(TR("Recorte del sello: horizontal"), 4, -120, 120, 1, "%d", "mCoverX", true)
+            ModelSlider(TR("Recorte del sello: vertical"), 5, -150, 150, 1, "%d", "mCoverY", true)
+            Text(group, L("La copia comparte el zoom de la espada principal.",
+                "The mirrored copy shares the main weapon’s zoom."), "GameFontHighlightSmall", 16, -250, 448)
+            local showCopy = Button(group, L("Activar copia simétrica", "Enable mirrored copy"), 16, -277, 220, 27, function()
+                db.mirror = true
+                ChangeAppearance()
+            end)
+            RefreshWith(function() showCopy:SetShown(not db.mirror) end)
+        else
+            ModelSlider("Zoom", 4, 0.3, 4, 0.1, "%.1f", "modelZoom")
+            ModelSlider(TR("Subir / bajar"), 5, -3, 3, 0.05, "%.2f", "modelY")
+            ModelSlider(L("Desplazamiento lateral", "Lateral offset"), 6, -3, 3, 0.05, "%.2f", "modelX")
+            ModelSlider(TR("Recorte del sello: tamaño"), 7, 10, 120, 1, "%d", "coverSize", true)
+            ModelSlider(TR("Recorte del sello: horizontal"), 8, -120, 120, 1, "%d", "coverX", true)
+            ModelSlider(TR("Recorte del sello: vertical"), 9, -150, 150, 1, "%d", "coverY", true)
+            local shape = Button(sealMask, "", 244, -282, 220, 27, function()
+                db.holeShape = db.holeShape == "circulo" and "cuadrado" or "circulo"
+                ChangeAppearance()
+            end)
+            Check(sealMask, L("Ocultar sello con 0–2 cargas", "Hide seal at 0–2 stacks"), -316,
+                SealCutoutEnabled, function(v)
+                    if ModelItem() == ASHBRINGER_ITEM then db.ashbringerCoverOn = v else db.coverOn = v end
+                    UpdateAppearance()
+                end)
+            RefreshWith(function()
+                shape.label:SetText(TR("Hueco: " .. (db.holeShape == "circulo" and "círculo" or "cuadrado")))
+            end)
+        end
+    end
+
+    StaticPopupDialogs["PALLY_WRATH_STUDIO_RESET_SETTINGS"] = {
+        text = L("¿Restablecer los ajustes de Pally Wrath?", "Reset Pally Wrath settings?"),
+        button1 = TR("Restablecer"),
+        button2 = CANCEL,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        OnAccept = function()
+            local log = db.log
+            wipe(db)
+            CopyDefaults(DEFAULTS, db)
+            db.log = log
+            M:Hide()
+            ApplyViewer()
+            ChangeAppearance()
+        end,
+    }
+    Button(advanced, TR("Restablecer"), 16, -348, 175, 28, function()
+        StaticPopup_Show("PALLY_WRATH_STUDIO_RESET_SETTINGS")
+    end)
 
     function opt:Refresh()
-        local showModel = db.style == "modelo"
-        self.modelBox:SetShown(showModel)
-        self:SetHeight(self.baseHeight + (showModel and self.boxHeight or 0))
-        for key, b in pairs(self.styleBtns) do
-            if key == db.style then b:LockHighlight() else b:UnlockHighlight() end
-            b:SetText((key == db.style and "> " or "") .. TR(STYLES[key].name) .. (key == db.style and " <" or ""))
+        if not self:IsVisible() then return end
+        for i, page in ipairs(pages) do
+            page:SetShown(i == selectedTab)
+            Selected(tabs[i], i == selectedTab)
         end
-        for key, b in pairs(self.dirBtns) do
-            if key == db.fillDir then b:LockHighlight() else b:UnlockHighlight() end
+        local isModel = db.style == "modelo" and ModelItem() ~= nil and not ActiveWeaponArt()
+        framing:SetShown(isModel)
+        noModel:SetShown(not isModel)
+        if db.style == "modelo" and db.useEquipped and not equippedItem then
+            noModel:SetText(EquippedName())
+        elseif db.style == "modelo" and ActiveWeaponArt() then
+            noModel:SetText(L("Esta arma usa una ilustración 2D. En Posición puedes ajustar el tamaño, la opacidad y la dirección de carga.",
+                "This weapon uses a 2D illustration. Use Position to adjust size, opacity, and fill direction."))
+        else
+            noModel:SetText(L("Selecciona un arma 3D en Apariencia para ajustar el encuadre.",
+                "Select a 3D weapon in Appearance to adjust its framing."))
         end
-        self.refreshScale(); self.refreshMin(); self.refreshFacing(); self.refreshAlpha(); self.refreshSound(); self.refreshLock(); self.refreshIcon(); self.refreshMirror()
-        for kind, sw in pairs(self.swatches) do
-            local c = SealColor(kind)
-            sw:SetColorTexture(c[1], c[2], c[3])
-        end
+        framePages[1]:SetShown(not copy)
+        framePages[2]:SetShown(copy)
+        Selected(frameButtons[1], not copy)
+        Selected(frameButtons[2], copy)
+        local weapon = ActiveWeapon()
+        local name = db.useEquipped and EquippedName() or (weapon and L(weapon.es, weapon.en) or tostring(db.modelItem))
+        profile:SetText(name .. L(" · Encuadre guardado por dirección", " · Framing saved per direction"))
+        for _, refresh in ipairs(slots) do refresh() end
+        sealLabel:SetText(L("Sello · ", "Seal · ") .. TR(SEAL_LABEL[previewSeal]))
+        ShowPreview()
     end
-    opt:SetScript("OnShow", function(self) self:Refresh() end)
-    opt:SetScript("OnHide", function() for _, w in pairs(modelWins) do w:Hide() end end)
-    opt:Hide()
-end
 
-------------------------------------------------------------
--- Ventanas de ajuste del Modelo 3D (principal y copia), con barras deslizantes
-------------------------------------------------------------
-local lastShow
-do
-    local _s = ShowMoon
-    ShowMoon = function(kind, tex, count, exp) lastShow = { kind, tex, count, exp }; _s(kind, tex, count, exp) end
-end
-
-local function SettingsChanged()
-    ApplyStyle()
-    modelClip.lastColor = nil
-    if f:IsShown() and lastShow then
-        ShowMoon(lastShow[1], lastShow[2], lastShow[3], lastShow[4])
-    elseif not (InCombatLockdown and InCombatLockdown()) and db.style == "modelo" then
-        RunTest(uw and uw.seal or "command")
+    local function Fit()
+        opt:SetScale(math.min(1, (UIParent:GetWidth() - 24) / 820, (UIParent:GetHeight() - 24) / 530))
     end
-end
-
-local DIR_NAME = { arriba = "hacia arriba", abajo = "hacia abajo", derecha = "hacia la derecha", izquierda = "hacia la izquierda" }
-
-local function MakeSliderRow(parent, y, label, minV, maxV, step, fmt, get, set)
-    local row = {}
-    local l = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    l:SetPoint("TOPLEFT", 14, y)
-    l:SetText(TR(label))
-    local val = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    val:SetPoint("TOPRIGHT", -14, y)
-    local sl = CreateFrame("Slider", nil, parent)
-    sl:SetOrientation("HORIZONTAL")
-    sl:SetSize(220, 16)
-    sl:SetPoint("TOPLEFT", 40, y - 18)
-    sl:SetMinMaxValues(minV, maxV)
-    sl:SetValueStep(step)
-    if sl.SetObeyStepOnDrag then sl:SetObeyStepOnDrag(true) end
-    local track = sl:CreateTexture(nil, "BACKGROUND")
-    track:SetPoint("LEFT"); track:SetPoint("RIGHT"); track:SetHeight(6)
-    track:SetColorTexture(0.12, 0.12, 0.14, 1)
-    local edge = sl:CreateTexture(nil, "BACKGROUND", nil, -1)
-    edge:SetPoint("TOPLEFT", track, -1, 1); edge:SetPoint("BOTTOMRIGHT", track, 1, -1)
-    edge:SetColorTexture(0.75, 0.6, 0.25, 1)
-    local thumb = sl:CreateTexture(nil, "ARTWORK")
-    thumb:SetTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-    thumb:SetSize(32, 32)
-    sl:SetThumbTexture(thumb)
-    local function round(v) return math.floor(v / step + 0.5) * step end
-    local updating = false
-    sl:SetScript("OnValueChanged", function(self, v)
-        v = round(v)
-        val:SetText(string.format(fmt, v))
-        if updating then return end
-        set(v)
-        SettingsChanged()
-    end)
-    sl:EnableMouseWheel(true)
-    sl:SetScript("OnMouseWheel", function(self, d) self:SetValue((self:GetValue() or get() or 0) + d * step) end)
-    for i, sign in ipairs({ -1, 1 }) do
-        local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-        b:SetSize(22, 18)
-        b:SetText(sign < 0 and "-" or "+")
-        if sign < 0 then b:SetPoint("RIGHT", sl, "LEFT", -4, 0) else b:SetPoint("LEFT", sl, "RIGHT", 4, 0) end
-        b:SetScript("OnClick", function()
-            local cur = sl:GetValue() or get() or 0
-            sl:SetValue(math.max(minV, math.min(maxV, cur + sign * step)))
-        end)
-    end
-    row.refresh = function()
-        updating = true
-        local v = get() or 0
-        sl:SetValue(v)
-        val:SetText(string.format(fmt, v))
-        updating = false
-    end
-    return row
-end
-
-local function BuildModelWindow(which)
-    local isCopy = which == "copy"
-    local wname = "PallyWrathModel" .. (isCopy and "Copy" or "Main")
-    local w = CreateFrame("Frame", wname, UIParent, "BasicFrameTemplateWithInset")
-    w:SetFrameStrata("DIALOG")
-    w:SetMovable(true); w:EnableMouse(true); w:RegisterForDrag("LeftButton")
-    w:SetScript("OnDragStart", w.StartMoving); w:SetScript("OnDragStop", w.StopMovingOrSizing)
-    w:SetClampedToScreen(true)
-    tinsert(UISpecialFrames, wname)
-    local title = rawget(w, "TitleText")
-    if type(title) ~= "table" then title = w:CreateFontString(nil, "OVERLAY", "GameFontHighlight"); title:SetPoint("TOP", 0, -5) end
-    w.title = title
-    local content = CreateFrame("Frame", nil, w)
-    content:SetPoint("TOPLEFT", 0, -28); content:SetPoint("BOTTOMRIGHT")
-    w.content = content
-    local rows, y = {}, -6
-    local function add(label, minV, maxV, step, fmt, get, set)
-        rows[#rows + 1] = MakeSliderRow(content, y, label, minV, maxV, step, fmt, get, set)
-        y = y - 46
-    end
-    if not isCopy then
-        add("Giro", 0, 360, 5, "%dº", function() return db.modelFacing end, function(v) db.modelFacing = v % 360 end)
-        add("Inclinación", 0, 360, 5, "%dº", function() return db.modelPitch end, function(v) db.modelPitch = v % 360 end)
-        add("Rotación", 0, 360, 5, "%dº", function() return db.modelRoll end, function(v) db.modelRoll = v % 360 end)
-        add("Zoom", 0.3, 4, 0.1, "%.1f", function() return db.modelZoom end, function(v) db.modelZoom = v end)
-        add("Subir / bajar", -3, 3, 0.05, "%.2f", function() return db.modelY end, function(v) db.modelY = v end)
-        add("Hueco calavera: tamaño", 10, 120, 1, "%d", function() return db.coverSize end, function(v) db.coverSize = v end)
-        add("Hueco calavera: horizontal", -120, 120, 1, "%d", function() return db.coverX end, function(v) db.coverX = v end)
-        add("Hueco calavera: vertical", -150, 150, 1, "%d", function() return db.coverY end, function(v) db.coverY = v end)
-        local shape = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-        shape:SetSize(140, 22); shape:SetPoint("TOPLEFT", 14, y)
-        shape:SetScript("OnClick", function()
-            db.holeShape = (db.holeShape == "circulo") and "cuadrado" or "circulo"
-            SettingsChanged(); w:Refresh()
-        end)
-        rows[#rows + 1] = { refresh = function() shape:SetText(TR("Hueco: " .. (db.holeShape == "circulo" and "círculo" or "cuadrado"))) end }
-        y = y - 30
-    else
-        add("Giro", 0, 360, 5, "%dº", function() return MirrorVal("mFacing") end, function(v) db.mFacing = v % 360 end)
-        add("Inclinación", 0, 360, 5, "%dº", function() return MirrorVal("mPitch") end, function(v) db.mPitch = v % 360 end)
-        add("Rotación", 0, 360, 5, "%dº", function() return MirrorVal("mRoll") end, function(v) db.mRoll = v % 360 end)
-        add("Hueco calavera: horizontal", -120, 120, 1, "%d", function() return MirrorVal("mCoverX") end, function(v) db.mCoverX = v end)
-        add("Hueco calavera: vertical", -150, 150, 1, "%d", function() return MirrorVal("mCoverY") end, function(v) db.mCoverY = v end)
-        local note = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        note:SetPoint("TOPLEFT", 14, y); note:SetWidth(290); note:SetJustifyH("LEFT")
-        note:SetText(TR("El tamaño del hueco y el zoom son los de la espada principal."))
-        y = y - 24
-    end
-    w.fullH = -y + 40
-    w:SetSize(330, w.fullH)
-    -- plegar / desplegar
-    local fold = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
-    fold:SetSize(22, 18); fold:SetPoint("TOPLEFT", 6, -3)
-    fold:SetText("-")
-    fold:SetScript("OnClick", function()
-        w.folded = not w.folded
-        content:SetShown(not w.folded)
-        w:SetHeight(w.folded and 28 or w.fullH)
-        fold:SetText(w.folded and "+" or "-")
-    end)
-    function w:Refresh()
-        self.title:SetText(TR((isCopy and "Copia simétrica" or "Espada principal") .. " - " .. (DIR_NAME[db.fillDir] or "")))
-        for _, r in ipairs(rows) do r.refresh() end
-    end
-    w:SetScript("OnShow", function(self) self:Refresh() end)
-    -- colocar junto al menú de opciones
-    w:ClearAllPoints()
-    if opt then
-        if isCopy then w:SetPoint("TOPLEFT", opt, "TOPRIGHT", 4, -340) else w:SetPoint("TOPLEFT", opt, "TOPRIGHT", 4, 0) end
-    else
-        w:SetPoint("CENTER", isCopy and 180 or -180, 0)
-    end
-    w:Hide()
-    return w
-end
-
-ToggleModelWindow = function(which)
-    if not modelWins[which] then modelWins[which] = BuildModelWindow(which) end
-    local w = modelWins[which]
-    if w:IsShown() then w:Hide() else w:Show() end
-end
-
-RefreshModelWindows = function()
-    for _, w in pairs(modelWins) do if w:IsShown() then w:Refresh() end end
+    opt:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    opt:RegisterEvent("UI_SCALE_CHANGED")
+    opt:SetScript("OnEvent", Fit)
+    opt:SetScript("OnShow", function(self) Fit(); self:Refresh() end)
+    opt:SetScript("OnHide", function(self) self:StopMovingOrSizing() end)
 end
 
 local function ToggleOptions()
@@ -2141,18 +2675,14 @@ RegisterSettingsPanel = function()
 end
 
 ------------------------------------------------------------
--- Comandos: /pw (también /pallywrath y /eco)
+-- Comandos: /pw, /pallywrath, /eco, /pws y /pallywrathstudio
 ------------------------------------------------------------
-local function Print(msg) DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. TR(msg)) end
-PW_Print = Print
+Print = function(msg) DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. TR(msg)) end
 
-------------------------------------------------------------
--- Cooldown Manager de Blizzard: es la única fuente de cargas en combate.
--- Lo encendemos si está apagado y, si se quiere, lo dejamos invisible
--- (transparente) pero activo, para que siga actualizando sus iconos.
-------------------------------------------------------------
+-- El icono del visor de Blizzard es la fuente de cargas en combate.
+-- Pally Wrath solo cambia su opacidad si se activa ese ajuste.
 local VIEWERS = { "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
-local viewerHooked, viewerGuard = {}, false
+local viewerHooked, viewerAlpha, viewerGuard = {}, {}, false
 
 local function CanTouch(v)
     if not v then return false end
@@ -2160,40 +2690,34 @@ local function CanTouch(v)
     return true
 end
 
-function PW_ApplyViewer()
+ApplyViewer = function()
     if not db then return end
     for _, name in ipairs(VIEWERS) do
-        local v = _G[name]
-        if v and CanTouch(v) then
-            if not viewerHooked[v] then
-                viewerHooked[v] = true
-                hooksecurefunc(v, "SetAlpha", function(self, a)
-                    if viewerGuard or not db or db.hideViewer == false then return end
-                    if IsSecret(a) or a == 0 or not CanTouch(self) then return end
-                    viewerGuard = true
-                    pcall(self.SetAlpha, self, 0)
-                    viewerGuard = false
-                end)
+        local viewer = _G[name]
+        if CanTouch(viewer) then
+            if db.hideViewer then
+                if not viewerHooked[viewer] then
+                    viewerHooked[viewer] = true
+                    hooksecurefunc(viewer, "SetAlpha", function(self, alpha)
+                        if viewerGuard or not db.hideViewer then return end
+                        if IsSecret(alpha) or alpha == 0 or not CanTouch(self) then return end
+                        viewerAlpha[self] = alpha
+                        viewerGuard = true
+                        pcall(self.SetAlpha, self, 0)
+                        viewerGuard = false
+                    end)
+                end
+                if viewerAlpha[viewer] == nil then
+                    local alpha = viewer:GetAlpha()
+                    if not IsSecret(alpha) then viewerAlpha[viewer] = alpha end
+                end
+                viewerGuard = true
+                pcall(viewer.SetAlpha, viewer, 0)
+                viewerGuard = false
+            elseif viewerAlpha[viewer] ~= nil then
+                pcall(viewer.SetAlpha, viewer, viewerAlpha[viewer])
+                viewerAlpha[viewer] = nil
             end
-            viewerGuard = true
-            pcall(v.SetAlpha, v, (db.hideViewer ~= false) and 0 or 1)
-            viewerGuard = false
-        end
-    end
-end
-
-local function EnsureCooldownManager()
-    local _, class = UnitClass("player")
-    if class ~= "PALADIN" then return end
-    if not (C_CVar and C_CVar.GetCVar) then return end
-    local ok, val = pcall(C_CVar.GetCVar, "cooldownViewerEnabled")
-    Log("Cooldown Manager (cooldownViewerEnabled) = " .. D(val))
-    if ok and val == "0" and not (InCombatLockdown and InCombatLockdown()) then
-        local okS = pcall(C_CVar.SetCVar, "cooldownViewerEnabled", "1")
-        Log("activar Cooldown Manager: ok=" .. tostring(okS))
-        if okS then
-            Print("Cooldown Manager activado: Pally Wrath lo necesita para contar cargas en combate.")
-            if not _G.BuffIconCooldownViewer then Print("Si no ves el indicador en combate, haz /reload.") end
         end
     end
 end
@@ -2205,8 +2729,7 @@ pcall(viewerEv.RegisterEvent, viewerEv, "EDIT_MODE_LAYOUTS_UPDATED")
 pcall(viewerEv.RegisterEvent, viewerEv, "CVAR_UPDATE")
 viewerEv:SetScript("OnEvent", function(_, event)
     if not db then return end
-    if event == "PLAYER_ENTERING_WORLD" then pcall(EnsureCooldownManager) end
-    C_Timer.After(0.5, function() pcall(PW_ApplyViewer) end)
+    C_Timer.After(0.5, function() pcall(ApplyViewer) end)
 end)
 
 ------------------------------------------------------------
@@ -2214,6 +2737,7 @@ end)
 -- (/pw sonda). Escribe los resultados en el registro y muestra un
 -- pequeño panel de prueba con el número "a ciegas".
 ------------------------------------------------------------
+local ToggleProbe = (function()
 local sonda = { armed = false, t = 0, runs = 0 }
 local sp = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
 sp:SetSize(220, 70)
@@ -2386,7 +2910,7 @@ sondaFrame:SetScript("OnUpdate", function(_, elapsed)
     if not ok then SLog("ERROR: " .. D(err)) end
 end)
 
-function PW_SondaToggle()
+return function()
     sonda.armed = not sonda.armed
     if sonda.armed then
         sonda.runs, sonda.outDone, sonda.tick = 0, false, 0
@@ -2398,11 +2922,15 @@ function PW_SondaToggle()
         Print("Sonda desactivada.")
     end
 end
+end)()
 
 SLASH_PALLYWRATH1 = "/pw"
-SLASH_PALLYWRATH2 = "/pallywrath"
 SLASH_PALLYWRATH3 = "/eco"
-SlashCmdList.PALLYWRATH = function(msg)
+SLASH_PALLYWRATH4 = "/pws"
+SLASH_PALLYWRATH5 = "/pallywrathstudio"
+SLASH_PALLYWRATH2 = "/pallywrath"
+
+local function HandleCommand(msg)
     local cmd, a, b = strsplit(" ", string.lower(msg or ""))
     -- alias en inglés
     local CMD_EN = { options = "opciones", help = "ayuda", style = "estilo", scale = "escala", sound = "sonido",
@@ -2492,7 +3020,7 @@ SlashCmdList.PALLYWRATH = function(msg)
         local v = tonumber(a)
         if v then
             if cmd == "inclinacion" then db.modelPitch = v % 360 else db.modelRoll = v % 360 end
-            if db.style == "modelo" then LoadModel(); modelClip.lastColor = nil end
+            if db.style == "modelo" and not ActiveWeaponArt() then UpdateAppearance() end
             Print(cmd .. ": " .. (v % 360) .. "º")
         else
             Print("Uso: /pw " .. cmd .. " <grados>")
@@ -2502,29 +3030,30 @@ SlashCmdList.PALLYWRATH = function(msg)
         elseif a == "si" or a == "mostrar" then db.showIcon = true
         elseif a == "recolocar" or a == "reset" then db.iconOffset = nil
         else Print("Uso: /pw icono si | no | recolocar"); return end
-        ApplyStyle()
+        UpdateAppearance()
         Print("Icono del sello: " .. (db.showIcon and "visible" or "oculto") .. (db.iconOffset and " (posición propia)" or ""))
     elseif cmd == "espejo" or cmd == "copia" then
         if a == "si" then db.mirror = true elseif a == "no" then db.mirror = false
         else db.mirror = not db.mirror end
-        ApplyStyle()
+        UpdateAppearance()
         if db.mirror then RunTest(uw and uw.seal or "command") else M:Hide() end
         Print("Copia simétrica: " .. (db.mirror and "activada" or "desactivada"))
     elseif cmd == "giro" then
         local v = tonumber(a)
         if v then
             db.modelFacing = v % 360
-            if db.style == "modelo" then LoadModel(); modelClip.lastColor = nil end
+            if db.style == "modelo" and not ActiveWeaponArt() then UpdateAppearance() end
             Print("Giro del modelo: " .. db.modelFacing .. "º")
         else
             Print("Uso: /pw giro <grados>   (actual: " .. tostring(db.modelFacing) .. "º)")
         end
     elseif cmd == "objeto" then
         local id = tonumber(a)
-        if id then
+        if id and id > 0 and id == math.floor(id) then
+            db.useEquipped = false
             db.modelItem = id
-            if db.style == "modelo" then LoadModel(); modelClip.lastColor = nil end
-            Print("Modelo 3D: objeto " .. id)
+            UpdateAppearance()
+            Print((ActiveWeaponArt() and "Ilustración de arma: objeto " or "Modelo 3D: objeto ") .. id)
         else
             Print("Uso: /pw objeto <ID de objeto>   (actual: " .. tostring(db.modelItem) .. ")")
         end
@@ -2532,7 +3061,7 @@ SlashCmdList.PALLYWRATH = function(msg)
         local v = tonumber(a)
         if v and v > 0.2 and v < 5 then
             db.modelZoom = v
-            if db.style == "modelo" then LoadModel(); modelClip.lastColor = nil end
+            if db.style == "modelo" and not ActiveWeaponArt() then UpdateAppearance() end
             Print("Zoom del modelo: " .. v)
         else
             Print("Uso: /pw zoom 0.5-3   (actual: " .. tostring(db.modelZoom) .. ")")
@@ -2552,10 +3081,10 @@ SlashCmdList.PALLYWRATH = function(msg)
         if a == "si" or a == "mostrar" or a == "show" then db.hideViewer = false
         elseif a == "no" or a == "ocultar" or a == "hide" then db.hideViewer = true
         else db.hideViewer = (db.hideViewer == false) end
-        PW_ApplyViewer()
+        ApplyViewer()
         Print("Visor de Blizzard: " .. (db.hideViewer ~= false and TR("oculto") or TR("visible")))
     elseif cmd == "sonda" or cmd == "probe" then
-        PW_SondaToggle()
+        ToggleProbe()
     elseif cmd == "debug" then
         db.debug = not db.debug
         Print("Debug: " .. (db.debug and "activado" or "desactivado"))
@@ -2602,8 +3131,9 @@ SlashCmdList.PALLYWRATH = function(msg)
         PallyWrathDB = {}
         db = PallyWrathDB
         CopyDefaults(DEFAULTS, db)
-        ApplyStyle()
-        ApplyPosition()
+        M:Hide()
+        ApplyViewer()
+        UpdateAppearance()
         Print("Configuración restablecida.")
     elseif cmd == "" or cmd == nil or cmd == "opciones" or cmd == "menu" then
         ToggleOptions()
@@ -2625,4 +3155,9 @@ SlashCmdList.PALLYWRATH = function(msg)
         Print("  /pw log [borrar]           - ver el registro de diagnóstico")
         Print("  /pw reset")
     end
+end
+
+SlashCmdList.PALLYWRATH = function(msg)
+    HandleCommand(msg)
+    if opt then opt:Refresh() end
 end

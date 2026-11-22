@@ -1,5 +1,27 @@
 # Pally Wrath — Changelog
 
+## 1.2.7
+
+**English**
+- New in-game menu (/pw) with an interactive gallery, a Preview tab (pick a seal and 0–3 stacks, "Test on screen") and Position/Advanced tabs.
+- New look options: Crescent, Fixed weapon or Equipped weapon (loads your main-hand model and updates when you switch weapons).
+- New weapons: Ashbringer and Corrupted Ashbringer (3D with an adjustable cutout that reveals the seal), Thunderfury, Sulfuras and the Runeblade of Baron Rivendare (3D), plus El'druin, Azurewrath, Shadowmourne and Fyr'alath artwork next to the classic sword.
+- At three stacks the weapons light up with an animated outline in the seal's color; models go from matte to full color as stacks build up.
+- 3D framing is saved per weapon and fill direction, for both the main weapon and the mirrored copy.
+- Version check: Pally Wrath tells you once per session, in your own chat, if someone in your party, raid or guild has a newer version.
+- Try any other model from the game with /pw item <ID>.
+- Your settings from earlier versions are kept.
+
+**Español**
+- Nuevo menú en el juego (/pw) con galería interactiva, pestaña Vista previa (elige un sello y de 0 a 3 cargas, «Probar en pantalla») y pestañas Posición y Avanzado.
+- Nuevas apariencias: Media luna, Arma fija o Arma equipada (carga el modelo de tu mano principal y se actualiza al cambiar de arma).
+- Armas nuevas: Crematoria y Crematoria corrupta (3D con un recorte regulable que muestra el sello), Trueno Furioso, Sulfuras y la Hoja rúnica del Barón Rivendare (3D), y las ilustraciones de El'druin, Ira celeste, Agonía de Sombras y Fyr'alath junto a la espada clásica.
+- Con tres cargas las armas se encienden con un contorno animado del color del sello; los modelos pasan de mate a color según suben las cargas.
+- El encuadre 3D se guarda por arma y dirección, para el arma principal y para la copia simétrica.
+- Aviso de versión: si alguien de tu grupo, banda o hermandad tiene una versión más nueva, te avisa una vez por sesión en tu chat privado.
+- Prueba cualquier otro modelo del juego con /pw objeto <ID>.
+- Se conservan tus ajustes de versiones anteriores.
+
 ## 1.0.3
 
 **English**
